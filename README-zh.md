@@ -8,7 +8,7 @@
 
 ### 简介
 
-SuiYu Agent 是一个开源的 AI Agent 平台，支持 Agent 管理、技能系统、MCP 协议、聊天对话与 RBAC 权限控制。
+SuiYu Agent 是一个开源的 AI Agent 平台，支持 Agent 管理、技能系统、MCP 协议、聊天对话与 RBAC 权限控制。 支持sso登录
 
 - **后端**：Go (Hertz) + PostgreSQL (pgvector)
 - **前端**：可选嵌入的 Vue3 Web UI
