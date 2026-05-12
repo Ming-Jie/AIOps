@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/fisk086/sya/internal/auth"
 	"github.com/fisk086/sya/internal/logger"
 	"github.com/fisk086/sya/internal/schema"
-	"github.com/cloudwego/hertz/pkg/app"
 )
 
 // StreamGroupChat is POST /chat/groups/stream — SSE for group chat without agent_id/workflow_id on the legacy /chat/stream contract.
@@ -33,10 +33,28 @@ func (c *ChatController) StreamGroupChat(ctx context.Context, hc *app.RequestCon
 		logger.Info("client_type reconciled from User-Agent", "from", beforeCT, "to", req.ClientType, "ua_len", len(ua))
 	}
 
-	for _, aid := range req.Mentions {
-		if c.rbacService != nil && !c.checkAgentAccess(ctx, hc, aid) {
-			hc.JSON(http.StatusForbidden, schema.ErrorResponse("no permission to use a mentioned agent"))
-			return
+	if c.rbacService != nil {
+		agentIDs := append([]int64(nil), req.Mentions...)
+		if len(agentIDs) == 0 {
+			group, err := c.chatService.GetChatGroup(ctx, req.GroupID)
+			if err != nil {
+				hc.JSON(http.StatusNotFound, schema.ErrorResponse("group not found"))
+				return
+			}
+			for _, member := range group.Members {
+				agentIDs = append(agentIDs, member.AgentID)
+			}
+		}
+		seen := make(map[int64]struct{}, len(agentIDs))
+		for _, aid := range agentIDs {
+			if _, ok := seen[aid]; ok {
+				continue
+			}
+			seen[aid] = struct{}{}
+			if !c.checkAgentAccess(ctx, hc, aid) {
+				hc.JSON(http.StatusForbidden, schema.ErrorResponse("no permission to use a group agent"))
+				return
+			}
 		}
 	}
 

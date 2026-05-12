@@ -246,8 +246,8 @@ function createChatPageState () {
     try {
       const { data } = await api.get<APIResponse<ChatGroup[]>>('/chat/groups')
       chatGroups.value = data.data || []
-    } catch (err) {
-      console.warn('loadChatGroups failed:', err)
+    } catch {
+      chatGroups.value = []
     }
   }
 
@@ -605,8 +605,8 @@ function createChatPageState () {
             sid = sess.session_id
             setStoredGroupSessionId(group.id, sid)
           }
-        } catch (err) {
-          console.warn('create group chat session failed:', err)
+        } catch {
+          sid = ''
         }
       }
     }
@@ -1308,7 +1308,6 @@ function createChatPageState () {
       history.value = []
       lastTurnDurationMs.value = null
       const err = e as { response?: { status?: number }; message?: string }
-      console.warn('loadSessions failed:', err)
       if (err.response?.status === 503) {
         $q.notify({ type: 'warning', message: '会话服务不可用，请检查数据库配置' })
       }
@@ -1378,7 +1377,6 @@ function createChatPageState () {
       if (isCancel(e)) return
       history.value = []
       const err = e as { response?: { status?: number } }
-      console.warn('loadMessages failed:', err)
       if (err.response?.status === 404) {
         $q.notify({ type: 'warning', message: t('chatSessionNotFound') })
       }

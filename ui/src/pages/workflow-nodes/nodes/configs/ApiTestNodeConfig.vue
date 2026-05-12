@@ -6,15 +6,15 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfAPITestMethod') }}</div>
-      <q-select :model-value="strField('method')" :options="[{'label':'GET','value':'GET'}]" outlined dense emit-value map-options class="config-input" @update:model-value="patchConfig('method', $event)" />
+      <q-select :model-value="strField('method') || 'GET'" :options="methodOptions" outlined dense emit-value map-options class="config-input" @update:model-value="patchConfig('method', $event)" />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfAPITestURL') }}</div>
-      <q-input :model-value="strField('url')" outlined dense class="config-input" @update:model-value="patchConfig('url', $event)" />
+      <q-input :model-value="strField('url')" outlined dense :placeholder="t('wfAPITestURLPh')" class="config-input" @update:model-value="patchConfig('url', $event)" />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfAPITestHeaders') }}</div>
-      <q-input :model-value="strField('headers')" outlined dense type="textarea" rows="2" class="config-input" @update:model-value="patchConfig('headers', $event)" />
+      <q-input :model-value="jsonField('headers')" outlined dense type="textarea" rows="4" class="config-input" @update:model-value="patchJSON('headers', $event)" />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfAPITestBody') }}</div>
@@ -22,7 +22,7 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfAPITestAssertions') }}</div>
-      <q-input :model-value="strField('assertions')" outlined dense type="textarea" rows="3" class="config-input" @update:model-value="patchConfig('assertions', $event)" />
+      <q-input :model-value="jsonField('assertions')" outlined dense type="textarea" rows="4" :placeholder="t('wfAPITestAssertionsPh')" class="config-input" @update:model-value="patchJSON('assertions', $event)" />
     </div>
   </div>
 </template>
@@ -40,6 +40,8 @@ const emit = defineEmits(['update:label', 'update:config'])
 
 const { t } = useI18n()
 
+const methodOptions = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(v => ({ label: v, value: v }))
+
 function patchConfig (key: string, value: unknown) {
   emit('update:config', { ...props.config, [key]: value })
 }
@@ -47,6 +49,31 @@ function patchConfig (key: string, value: unknown) {
 function strField (key: string): string {
   const v = props.config[key]
   return v == null ? '' : String(v)
+}
+
+function jsonField (key: string): string {
+  const v = props.config[key]
+  if (v == null || v === '') return '{}'
+  if (typeof v === 'string') return v
+  try {
+    return JSON.stringify(v, null, 2)
+  } catch {
+    return String(v)
+  }
+}
+
+function patchJSON (key: string, value: unknown) {
+  const raw = value == null ? '' : String(value).trim()
+  if (!raw) {
+    patchConfig(key, {})
+    return
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    patchConfig(key, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {})
+  } catch {
+    patchConfig(key, raw)
+  }
 }
 
 const nodeLabel = computed({

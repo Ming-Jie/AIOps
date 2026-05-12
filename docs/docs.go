@@ -40,13 +40,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -70,7 +70,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CreateAgentRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CreateAgentRequest"
                         }
                     }
                 ],
@@ -78,19 +78,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -113,13 +113,42 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/for-schedule": {
+            "get": {
+                "description": "Get a list of agents filtered by excluding those with client execution mode",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agents"
+                ],
+                "summary": "List agents available for schedule",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -151,25 +180,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -200,7 +229,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateAgentRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UpdateAgentRequest"
                         }
                     }
                 ],
@@ -208,25 +237,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -256,19 +285,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -300,13 +329,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -338,19 +367,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -381,7 +410,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateCapabilityTreeRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UpdateCapabilityTreeRequest"
                         }
                     }
                 ],
@@ -389,19 +418,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -475,19 +504,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -516,7 +545,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuditLogCreateRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuditLogCreateRequest"
                         }
                     }
                 ],
@@ -524,25 +553,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -609,25 +638,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -689,19 +718,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -734,25 +763,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -782,7 +811,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.ChangePasswordRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.ChangePasswordRequest"
                         }
                     }
                 ],
@@ -790,31 +819,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.MessageResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.MessageResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     }
                 }
@@ -840,7 +869,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.LoginRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.LoginRequest"
                         }
                     }
                 ],
@@ -848,31 +877,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.TokenResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.TokenResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     }
                 }
@@ -897,19 +926,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.GetMeResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.GetMeResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     }
                 }
@@ -937,7 +966,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateProfileRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UpdateProfileRequest"
                         }
                     }
                 ],
@@ -945,37 +974,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.ProfileUpdateResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.ProfileUpdateResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     }
                 }
@@ -1001,7 +1030,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.RefreshTokenRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.RefreshTokenRequest"
                         }
                     }
                 ],
@@ -1009,25 +1038,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.TokenPairResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.TokenPairResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     }
                 }
@@ -1053,7 +1082,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.RegisterRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.RegisterRequest"
                         }
                     }
                 ],
@@ -1061,25 +1090,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.RegisterSuccessResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.RegisterSuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse"
                         }
                     }
                 }
@@ -1110,7 +1139,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.ChatRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.ChatRequest"
                         }
                     }
                 ],
@@ -1118,25 +1147,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1161,7 +1190,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1187,7 +1216,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CreateGroupRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CreateGroupRequest"
                         }
                     }
                 ],
@@ -1195,7 +1224,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1229,7 +1258,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1262,7 +1291,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateGroupRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UpdateGroupRequest"
                         }
                     }
                 ],
@@ -1270,7 +1299,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1302,7 +1331,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1348,19 +1377,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1389,7 +1418,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CreateChatSessionRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CreateChatSessionRequest"
                         }
                     }
                 ],
@@ -1397,25 +1426,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1461,31 +1490,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1516,7 +1545,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.StopChatRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.StopChatRequest"
                         }
                     }
                 ],
@@ -1524,19 +1553,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1567,7 +1596,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.ChatRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.ChatRequest"
                         }
                     }
                 ],
@@ -1581,19 +1610,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1616,13 +1645,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1646,7 +1675,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CreateMCPConfigRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CreateMCPConfigRequest"
                         }
                     }
                 ],
@@ -1654,19 +1683,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1699,7 +1728,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CreateMCPConfigRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CreateMCPConfigRequest"
                         }
                     }
                 ],
@@ -1707,25 +1736,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1755,19 +1784,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1800,7 +1829,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.SyncMCPServerRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.SyncMCPServerRequest"
                         }
                     }
                 ],
@@ -1808,19 +1837,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1848,13 +1877,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1877,13 +1906,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1907,7 +1936,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CreateSkillRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CreateSkillRequest"
                         }
                     }
                 ],
@@ -1915,25 +1944,72 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/skills/sync-builtins": {
+            "post": {
+                "description": "Inserts missing skills from the server registry (skills/*/SKILL.md). Does not overwrite existing rows.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "skills"
+                ],
+                "summary": "Sync built-in skills from skills directory into the database",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
             }
         },
         "/skills/{id}": {
+            "get": {
+                "description": "Returns one skill including content; empty DB content may be filled from skills/*/SKILL.md for built-ins.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "skills"
+                ],
+                "summary": "Get skill by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Skill ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
+                        }
+                    }
+                }
+            },
             "put": {
                 "description": "Partial update: only send fields to change (risk_level, execution_mode, prompt_hint, etc.)",
                 "consumes": [
@@ -1960,7 +2036,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateSkillRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UpdateSkillRequest"
                         }
                     }
                 ],
@@ -1968,7 +2044,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -1998,19 +2074,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -2030,13 +2106,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -2060,7 +2136,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CreateWorkflowRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CreateWorkflowRequest"
                         }
                     }
                 ],
@@ -2068,13 +2144,13 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -2102,13 +2178,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -2138,7 +2214,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateWorkflowRequest"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UpdateWorkflowRequest"
                         }
                     }
                 ],
@@ -2146,13 +2222,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -2175,13 +2251,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse"
+                            "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.APIResponse"
                         }
                     }
                 }
@@ -2189,7 +2265,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_fisk086_taskmate_internal_schema.APIResponse": {
+        "github_com_fisk086_sya_internal_schema.APIResponse": {
             "type": "object",
             "properties": {
                 "code": {
@@ -2201,7 +2277,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.AuditLogCreateRequest": {
+        "github_com_fisk086_sya_internal_schema.AuditLogCreateRequest": {
             "type": "object",
             "properties": {
                 "action": {
@@ -2236,7 +2312,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.AuthErrorResponse": {
+        "github_com_fisk086_sya_internal_schema.AuthErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
@@ -2244,7 +2320,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.CapabilityTreeNode": {
+        "github_com_fisk086_sya_internal_schema.CapabilityTreeNode": {
             "type": "object",
             "properties": {
                 "capability_id": {
@@ -2253,7 +2329,7 @@ const docTemplate = `{
                 "children": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CapabilityTreeNode"
+                        "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CapabilityTreeNode"
                     }
                 },
                 "id": {
@@ -2280,7 +2356,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.ChangePasswordRequest": {
+        "github_com_fisk086_sya_internal_schema.ChangePasswordRequest": {
             "type": "object",
             "required": [
                 "current_password",
@@ -2296,7 +2372,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.ChatImagePart": {
+        "github_com_fisk086_sya_internal_schema.ChatImagePart": {
             "type": "object",
             "properties": {
                 "base64": {
@@ -2307,7 +2383,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.ChatRequest": {
+        "github_com_fisk086_sya_internal_schema.ChatRequest": {
             "type": "object",
             "properties": {
                 "agent_id": {
@@ -2335,7 +2411,7 @@ const docTemplate = `{
                 "image_parts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.ChatImagePart"
+                        "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.ChatImagePart"
                     }
                 },
                 "image_url": {
@@ -2366,7 +2442,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.CreateAgentRequest": {
+        "github_com_fisk086_sya_internal_schema.CreateAgentRequest": {
             "type": "object",
             "required": [
                 "description",
@@ -2387,11 +2463,11 @@ const docTemplate = `{
                     "minLength": 1
                 },
                 "runtime_profile": {
-                    "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.RuntimeProfile"
+                    "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.RuntimeProfile"
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.CreateChatSessionRequest": {
+        "github_com_fisk086_sya_internal_schema.CreateChatSessionRequest": {
             "type": "object",
             "required": [
                 "agent_id"
@@ -2406,7 +2482,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.CreateGroupRequest": {
+        "github_com_fisk086_sya_internal_schema.CreateGroupRequest": {
             "type": "object",
             "required": [
                 "agent_ids",
@@ -2427,7 +2503,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.CreateMCPConfigRequest": {
+        "github_com_fisk086_sya_internal_schema.CreateMCPConfigRequest": {
             "type": "object",
             "required": [
                 "key",
@@ -2452,7 +2528,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.CreateSkillRequest": {
+        "github_com_fisk086_sya_internal_schema.CreateSkillRequest": {
             "type": "object",
             "required": [
                 "key",
@@ -2460,6 +2536,9 @@ const docTemplate = `{
                 "source_ref"
             ],
             "properties": {
+                "content": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -2474,7 +2553,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.CreateWorkflowRequest": {
+        "github_com_fisk086_sya_internal_schema.CreateWorkflowRequest": {
             "type": "object",
             "required": [
                 "key",
@@ -2515,15 +2594,15 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.GetMeResponse": {
+        "github_com_fisk086_sya_internal_schema.GetMeResponse": {
             "type": "object",
             "properties": {
                 "user": {
-                    "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse"
+                    "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UserResponse"
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.IMConfig": {
+        "github_com_fisk086_sya_internal_schema.IMConfig": {
             "type": "object",
             "properties": {
                 "app_id": {
@@ -2532,16 +2611,21 @@ const docTemplate = `{
                 "app_secret": {
                     "type": "string"
                 },
-                "verification_token": {
+                "auto_reply": {
+                    "type": "boolean"
+                },
+                "bot_name": {
                     "type": "string"
                 },
                 "encrypt_key": {
                     "type": "string"
                 },
-                "auto_reply": {
-                    "type": "boolean"
+                "lark_open_domain": {
+                    "description": "LarkOpenDomain is the Open Platform base URL, e.g. https://open.feishu.cn or https://open.larksuite.com",
+                    "type": "string"
                 },
-                "bot_name": {
+                "lark_region": {
+                    "description": "LarkRegion legacy: \"cn\" | \"intl\" when lark_open_domain empty (prefer lark_open_domain in UI).",
                     "type": "string"
                 },
                 "notify_on_approval": {
@@ -2556,12 +2640,20 @@ const docTemplate = `{
                 "telegram_token": {
                     "type": "string"
                 },
+                "verification_token": {
+                    "description": "Lark event subscription: URL challenge (LARK_BOT_VERIFICATION_TOKEN) and payload decrypt (LARK_BOT_ENCRYPT_KEY).",
+                    "type": "string"
+                },
                 "webhook_url": {
                     "type": "string"
+                },
+                "ws_enabled": {
+                    "description": "WsEnabled: when true (or nil legacy), server global Start() opens WebSocket on boot; false = register credentials only, manual Start per bot.",
+                    "type": "boolean"
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.LoginRequest": {
+        "github_com_fisk086_sya_internal_schema.LoginRequest": {
             "type": "object",
             "required": [
                 "password",
@@ -2582,7 +2674,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.MCPServer": {
+        "github_com_fisk086_sya_internal_schema.MCPServer": {
             "type": "object",
             "properties": {
                 "config_id": {
@@ -2609,7 +2701,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.MessageResponse": {
+        "github_com_fisk086_sya_internal_schema.MessageResponse": {
             "type": "object",
             "properties": {
                 "message": {
@@ -2617,18 +2709,18 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.ProfileUpdateResponse": {
+        "github_com_fisk086_sya_internal_schema.ProfileUpdateResponse": {
             "type": "object",
             "properties": {
                 "message": {
                     "type": "string"
                 },
                 "user": {
-                    "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse"
+                    "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UserResponse"
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.RefreshTokenRequest": {
+        "github_com_fisk086_sya_internal_schema.RefreshTokenRequest": {
             "type": "object",
             "required": [
                 "refresh_token"
@@ -2639,7 +2731,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.RegisterRequest": {
+        "github_com_fisk086_sya_internal_schema.RegisterRequest": {
             "type": "object",
             "required": [
                 "email",
@@ -2668,18 +2760,18 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.RegisterSuccessResponse": {
+        "github_com_fisk086_sya_internal_schema.RegisterSuccessResponse": {
             "type": "object",
             "properties": {
                 "message": {
                     "type": "string"
                 },
                 "user": {
-                    "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse"
+                    "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UserResponse"
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.RuntimeProfile": {
+        "github_com_fisk086_sya_internal_schema.RuntimeProfile": {
             "type": "object",
             "properties": {
                 "approval_mode": {
@@ -2710,7 +2802,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "im_config": {
-                    "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.IMConfig"
+                    "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.IMConfig"
                 },
                 "im_enabled": {
                     "type": "string"
@@ -2759,7 +2851,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.StopChatRequest": {
+        "github_com_fisk086_sya_internal_schema.StopChatRequest": {
             "type": "object",
             "required": [
                 "session_id"
@@ -2770,7 +2862,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.SyncMCPServerRequest": {
+        "github_com_fisk086_sya_internal_schema.SyncMCPServerRequest": {
             "type": "object",
             "properties": {
                 "create_capability": {
@@ -2779,12 +2871,12 @@ const docTemplate = `{
                 "tools": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.MCPServer"
+                        "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.MCPServer"
                     }
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.TokenPairResponse": {
+        "github_com_fisk086_sya_internal_schema.TokenPairResponse": {
             "type": "object",
             "properties": {
                 "access_token": {
@@ -2801,7 +2893,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.TokenResponse": {
+        "github_com_fisk086_sya_internal_schema.TokenResponse": {
             "type": "object",
             "properties": {
                 "access_token": {
@@ -2817,11 +2909,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user": {
-                    "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse"
+                    "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.UserResponse"
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.UpdateAgentRequest": {
+        "github_com_fisk086_sya_internal_schema.UpdateAgentRequest": {
             "type": "object",
             "properties": {
                 "category": {
@@ -2834,22 +2926,22 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "runtime_profile": {
-                    "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.RuntimeProfile"
+                    "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.RuntimeProfile"
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.UpdateCapabilityTreeRequest": {
+        "github_com_fisk086_sya_internal_schema.UpdateCapabilityTreeRequest": {
             "type": "object",
             "properties": {
                 "nodes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_fisk086_taskmate_internal_schema.CapabilityTreeNode"
+                        "$ref": "#/definitions/github_com_fisk086_sya_internal_schema.CapabilityTreeNode"
                     }
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.UpdateGroupRequest": {
+        "github_com_fisk086_sya_internal_schema.UpdateGroupRequest": {
             "type": "object",
             "properties": {
                 "agent_ids": {
@@ -2863,7 +2955,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.UpdateProfileRequest": {
+        "github_com_fisk086_sya_internal_schema.UpdateProfileRequest": {
             "type": "object",
             "properties": {
                 "email": {
@@ -2874,9 +2966,12 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.UpdateSkillRequest": {
+        "github_com_fisk086_sya_internal_schema.UpdateSkillRequest": {
             "type": "object",
             "properties": {
+                "content": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -2900,7 +2995,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.UpdateWorkflowRequest": {
+        "github_com_fisk086_sya_internal_schema.UpdateWorkflowRequest": {
             "type": "object",
             "properties": {
                 "config": {
@@ -2927,7 +3022,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_fisk086_taskmate_internal_schema.UserResponse": {
+        "github_com_fisk086_sya_internal_schema.UserResponse": {
             "type": "object",
             "properties": {
                 "avatar_url": {

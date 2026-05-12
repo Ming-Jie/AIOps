@@ -91,6 +91,7 @@ func (s *GraphWorkflowService) CreateDefinition(ctx context.Context, req *schema
 		Nodes:        nodesToModel(req.Nodes),
 		Edges:        edgesToModel(req.Edges),
 		Variables:    req.Variables,
+		Config:       req.Config,
 		InputSchema:  req.InputSchema,
 		OutputSchema: req.OutputSchema,
 		IsActive:     true,
@@ -120,6 +121,7 @@ func (s *GraphWorkflowService) UpdateDefinition(ctx context.Context, id int64, r
 		Nodes:        nodesToModel(req.Nodes),
 		Edges:        edgesToModel(req.Edges),
 		Variables:    req.Variables,
+		Config:       req.Config,
 		InputSchema:  req.InputSchema,
 		OutputSchema: req.OutputSchema,
 		Version:      existing.Version + 1,
@@ -195,9 +197,14 @@ func (s *GraphWorkflowService) Execute(ctx context.Context, req *schema.ExecuteW
 	for _, nr := range result.NodeResults {
 		nodeOrder = append(nodeOrder, nr.NodeID)
 		nodeResults[nr.NodeID] = map[string]any{
-			"label":  nr.Label,
-			"output": nr.Output,
-			"error":  nr.Error,
+			"node_id":     nr.NodeID,
+			"label":       nr.Label,
+			"node_type":   nr.NodeType,
+			"input":       nr.Input,
+			"output":      nr.Output,
+			"error":       nr.Error,
+			"duration_ms": nr.DurationMs,
+			"retry_count": nr.RetryCount,
 		}
 	}
 
@@ -229,6 +236,7 @@ func (s *GraphWorkflowService) Execute(ctx context.Context, req *schema.ExecuteW
 		NodeResult:      nodeResults,
 		NodeResultOrder: nodeOrder,
 		DurationMS:      duration,
+		ExecutionID:     result.ExecutionID,
 	}, nil
 }
 
@@ -242,6 +250,7 @@ func (s *GraphWorkflowService) toPublic(def *model.WorkflowDefinition) *schema.W
 		Nodes:        nodesToSchema(def.Nodes),
 		Edges:        edgesToSchema(def.Edges),
 		Variables:    def.Variables,
+		Config:       def.Config,
 		InputSchema:  def.InputSchema,
 		OutputSchema: def.OutputSchema,
 		Version:      def.Version,

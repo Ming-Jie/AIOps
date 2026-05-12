@@ -150,16 +150,16 @@ const inputVars = computed((): VarOption[] => {
 
 function getNodeFields (nodeId: string): string[] {
   if (props.nodeOutputFields && props.nodeOutputFields[nodeId]) {
-    return props.nodeOutputFields[nodeId]
+    return Array.from(new Set(props.nodeOutputFields[nodeId]))
   }
   const defaultFields: Record<string, string[]> = {
-    start: ['content', 'data'],
-    end: ['content', 'result'],
+    start: ['message', 'type'],
+    end: ['output', 'type'],
     agent: ['content', 'response', 'result'],
     llm: ['content', 'response', 'result'],
     condition: ['result', 'branch'],
-    merge: ['outputs', 'merged'],
-    http: ['response', 'body', 'status'],
+    merge: ['outputs', 'result', 'mode'],
+    http: ['body', 'status_code', 'error'],
     code: ['output', 'result'],
     tool: ['result', 'output'],
     knowledge: ['results', 'content'],
@@ -170,7 +170,7 @@ function getNodeFields (nodeId: string): string[] {
     apitest: ['result', 'response'],
     datamask: ['masked', 'count']
   }
-  return defaultFields[nodeId] || ['content', 'data', 'result']
+  return Array.from(new Set(defaultFields[nodeId] || ['content', 'data', 'result']))
 }
 
 function getNodeVarPath (nodeLabel: string, field: string): string {
@@ -181,7 +181,7 @@ function getNodeIcon (nodeType: string): string {
   const icons: Record<string, string> = {
     start: 'play_circle',
     end: 'stop_circle',
-    agent: 'smart_topy',
+    agent: 'smart_toy',
     llm: 'psychology',
     condition: 'call_split',
     merge: 'merge_type',

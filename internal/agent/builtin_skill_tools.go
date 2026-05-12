@@ -62,11 +62,25 @@ const (
 	builtinSkillS3Tool           = "builtin_skill.s3_tool"
 	builtinSkillHuaweiSwitch     = "builtin_skill.huawei_switch"
 	builtinSkillH3CSwitch        = "builtin_skill.h3c_switch"
+	builtinSkillCisco            = "builtin_skill.cisco"
 	builtinSkillCiscoIOS         = "builtin_skill.cisco_ios"
 	builtinSkillGCPReadonly      = "builtin_skill.gcp_readonly"
 	builtinSkillAzureReadonly    = "builtin_skill.azure_readonly"
 	builtinSkillLokiQuery        = "builtin_skill.loki_query"
 	builtinSkillArgoCDReadonly   = "builtin_skill.argocd_readonly"
+	builtinSkillDevtool          = "builtin_skill.devtool"
+	builtinSkillCodeReview       = "builtin_skill.code_review"
+	builtinSkillSQLExplain       = "builtin_skill.sql_explain"
+	builtinSkillJWTTool          = "builtin_skill.jwt_tool"
+	builtinSkillPasswordStrength = "builtin_skill.password_strength_checker"
+	builtinSkillSecretsScanner   = "builtin_skill.secrets_scanner"
+	builtinSkillSecurityHeaders  = "builtin_skill.security_headers_checker"
+	builtinSkillAPISecurity      = "builtin_skill.api_security_checker"
+	builtinSkillLogSecurity      = "builtin_skill.log_security_analyzer"
+	builtinSkillCryptoTool       = "builtin_skill.crypto_tool"
+	builtinSkillEthereumQuery    = "builtin_skill.ethereum_query"
+	builtinSkillSmartContract    = "builtin_skill.smart_contract"
+	builtinSkillTransaction      = "builtin_skill.transaction_analyzer"
 
 	toolWebSearch     = "builtin_web_search"
 	toolHTTPClient    = "builtin_http_client"
@@ -284,7 +298,9 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 	if _, ok := want[builtinSkillH3CSwitch]; ok {
 		safeAppendTool(skills.NewBuiltinH3CSwitchTool(), builtinSkillH3CSwitch)
 	}
-	if _, ok := want[builtinSkillCiscoIOS]; ok {
+	_, wantCisco := want[builtinSkillCisco]
+	_, wantCiscoIOS := want[builtinSkillCiscoIOS]
+	if wantCisco || wantCiscoIOS {
 		safeAppendTool(skills.NewBuiltinCiscoIOSTool(), builtinSkillCiscoIOS)
 	}
 	if _, ok := want[builtinSkillGCPReadonly]; ok {
@@ -298,6 +314,45 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 	}
 	if _, ok := want[builtinSkillArgoCDReadonly]; ok {
 		safeAppendTool(skills.NewBuiltinArgoCDReadonlyTool(), builtinSkillArgoCDReadonly)
+	}
+	if _, ok := want[builtinSkillDevtool]; ok {
+		safeAppendTool(skills.NewBuiltinDevtoolTool(), builtinSkillDevtool)
+	}
+	if _, ok := want[builtinSkillCodeReview]; ok {
+		safeAppendTool(skills.NewBuiltinCodeReviewTool(), builtinSkillCodeReview)
+	}
+	if _, ok := want[builtinSkillSQLExplain]; ok {
+		safeAppendTool(skills.NewBuiltinSQLExplainTool(), builtinSkillSQLExplain)
+	}
+	if _, ok := want[builtinSkillJWTTool]; ok {
+		safeAppendTool(skills.NewBuiltinJWTTool(), builtinSkillJWTTool)
+	}
+	if _, ok := want[builtinSkillPasswordStrength]; ok {
+		safeAppendTool(skills.NewBuiltinPasswordStrengthCheckerTool(), builtinSkillPasswordStrength)
+	}
+	if _, ok := want[builtinSkillSecretsScanner]; ok {
+		safeAppendTool(skills.NewBuiltinSecretsScannerTool(), builtinSkillSecretsScanner)
+	}
+	if _, ok := want[builtinSkillSecurityHeaders]; ok {
+		safeAppendTool(skills.NewBuiltinSecurityHeadersCheckerTool(), builtinSkillSecurityHeaders)
+	}
+	if _, ok := want[builtinSkillAPISecurity]; ok {
+		safeAppendTool(skills.NewBuiltinAPISecurityCheckerTool(), builtinSkillAPISecurity)
+	}
+	if _, ok := want[builtinSkillLogSecurity]; ok {
+		safeAppendTool(skills.NewBuiltinLogSecurityAnalyzerTool(), builtinSkillLogSecurity)
+	}
+	if _, ok := want[builtinSkillCryptoTool]; ok {
+		safeAppendTool(skills.NewBuiltinCryptoTool(), builtinSkillCryptoTool)
+	}
+	if _, ok := want[builtinSkillEthereumQuery]; ok {
+		safeAppendTool(skills.NewBuiltinEthereumQueryTool(), builtinSkillEthereumQuery)
+	}
+	if _, ok := want[builtinSkillSmartContract]; ok {
+		safeAppendTool(skills.NewBuiltinSmartContractTool(), builtinSkillSmartContract)
+	}
+	if _, ok := want[builtinSkillTransaction]; ok {
+		safeAppendTool(skills.NewBuiltinTransactionAnalyzerTool(), builtinSkillTransaction)
 	}
 	if len(errs) > 0 {
 		logger.Error("failed to load builtin skill tools for agent", "agent_id", agentID, "errors", errs)
@@ -417,6 +472,53 @@ func (r *Runtime) skillUsageHintsFromAgent(agent *schema.AgentWithRuntime) strin
 	}
 	if _, ok := want[builtinSkillImageAnalyzer]; ok {
 		parts = append(parts, "- **Image**: Use `builtin_image_analyzer` for technical image details (dimensions, format, size). For visual content, use model vision.")
+	}
+	_, wantCisco := want[builtinSkillCisco]
+	_, wantCiscoIOS := want[builtinSkillCiscoIOS]
+	if wantCisco || wantCiscoIOS {
+		parts = append(parts, "- **Cisco IOS**: Use `builtin_cisco_ios` for read-only Cisco IOS/IOS-XE switch/router operations over SSH. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillDevtool]; ok {
+		parts = append(parts, "- **Dev utilities**: Use `builtin_devtool` for datetime, hash, uuid, encoding/decoding, password generation, regex, and AES helpers.")
+	}
+	if _, ok := want[builtinSkillCodeReview]; ok {
+		parts = append(parts, "- **Code review**: Use `builtin_code_review` to review pasted code or diffs for correctness, security, reliability, and test risks.")
+	}
+	if _, ok := want[builtinSkillSQLExplain]; ok {
+		parts = append(parts, "- **SQL explain**: Use `builtin_sql_explain` to analyze pasted MySQL/PostgreSQL EXPLAIN plans and suggest index/query tuning steps. Use `builtin_mysql_explain` when a live MySQL DSN is available.")
+	}
+	if _, ok := want[builtinSkillMySQLExplain]; ok {
+		parts = append(parts, "- **MySQL EXPLAIN**: Use `builtin_mysql_explain` to run EXPLAIN / EXPLAIN ANALYZE / EXPLAIN FORMAT directly against a MySQL DSN.")
+	}
+	if _, ok := want[builtinSkillJWTTool]; ok {
+		parts = append(parts, "- **JWT**: Use `builtin_jwt_tool` to decode, inspect, verify, or encode JWT tokens.")
+	}
+	if _, ok := want[builtinSkillPasswordStrength]; ok {
+		parts = append(parts, "- **Password strength**: Use `builtin_password_strength_checker` to score password complexity and get concrete improvement suggestions.")
+	}
+	if _, ok := want[builtinSkillSecretsScanner]; ok {
+		parts = append(parts, "- **Secrets**: Use `builtin_secrets_scanner` to scan text/code for API keys, tokens, private keys, passwords, and credential URLs.")
+	}
+	if _, ok := want[builtinSkillSecurityHeaders]; ok {
+		parts = append(parts, "- **Security headers**: Use `builtin_security_headers_checker` to check HSTS, CSP, frame, content-type, referrer, permissions, and cross-origin headers from a URL or raw headers.")
+	}
+	if _, ok := want[builtinSkillAPISecurity]; ok {
+		parts = append(parts, "- **API security**: Use `builtin_api_security_checker` to statically scan handlers/routes for SQL injection, XSS, command injection, path traversal, unsafe deserialization, and weak CORS.")
+	}
+	if _, ok := want[builtinSkillLogSecurity]; ok {
+		parts = append(parts, "- **Log security**: Use `builtin_log_security_analyzer` to detect failed login, brute force, injection attempts, traversal, XSS, privilege escalation, and leaked secrets in logs.")
+	}
+	if _, ok := want[builtinSkillCryptoTool]; ok {
+		parts = append(parts, "- **Crypto**: Use `builtin_crypto_tool` for hash, HMAC, AES-GCM encrypt/decrypt, random bytes, and Base64 encode/decode.")
+	}
+	if _, ok := want[builtinSkillEthereumQuery]; ok {
+		parts = append(parts, "- **Ethereum**: Use `builtin_ethereum_query` for read-only Ethereum block, transaction, balance, gas, nonce, and chain queries.")
+	}
+	if _, ok := want[builtinSkillSmartContract]; ok {
+		parts = append(parts, "- **Smart contracts**: Use `builtin_smart_contract` for read-only ERC20/ERC721 contract info, balances, allowances, code, and storage.")
+	}
+	if _, ok := want[builtinSkillTransaction]; ok {
+		parts = append(parts, "- **Transaction analysis**: Use `builtin_transaction_analyzer` for Ethereum transaction details, receipts, gas analysis, costs, and token transfers.")
 	}
 	// Browser: one line whether the agent binds browser_client and/or legacy visible_browser (stub tool).
 	_, hasBrowserClient := want[builtinSkillBrowserClient]

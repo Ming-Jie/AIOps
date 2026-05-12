@@ -2,7 +2,7 @@
 name: secrets-scanner
 description: Scan for sensitive information in code like API keys, tokens, passwords
 activation_keywords: [secrets, scan, api key, token, credentials, sensitive, leak, security]
-execution_mode: client
+execution_mode: server
 ---
 
 # Secrets Scanner

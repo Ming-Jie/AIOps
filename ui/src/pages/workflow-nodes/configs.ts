@@ -6,6 +6,7 @@ export const defaultNodeConfigs: Record<string, NodeConfig> = {
   agent: { agent_id: 0, prompt_template: '' },
   llm: { agent_id: 0, prompt: '', system_prompt: '', temperature: 0.7 },
   tool: { tool_name: '', tool_input: '' },
+  mcp: { mcp_config_id: 0, tool_name: '', arguments: '{}' },
   http: { method: 'GET', url: '', headers: {}, body: '', timeout_ms: 30000 },
   code: { language: 'python', code: '' },
   condition: { condition: '' },
@@ -21,7 +22,7 @@ export const defaultNodeConfigs: Record<string, NodeConfig> = {
   wait: { duration_ms: 1000, condition: '', max_wait_ms: 300000 },
   ssh: { host: '', port: 22, username: '', password: '', command: '', timeout: 30 },
   notify: { channel: 'dingtalk', title: '', message: '', receivers: '' },
-  apitest: { url: '', method: 'GET', headers: {}, body: '', assertions: '' },
+  apitest: { url: '', method: 'GET', headers: {}, body: '', assertions: {} },
   datamask: { fields: '', mask_type: 'phone', pattern: '' }
 }
 

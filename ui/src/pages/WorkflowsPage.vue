@@ -229,6 +229,10 @@
             </div>
 
             <div class="config-section">
+              <div class="config-section-title">
+                <q-icon name="tune" size="16px" class="q-mr-xs" />
+                {{ t('wfNodeParameters') }}
+              </div>
               <component
                 v-if="selectedNodeId && registryConfigComponent"
                 :key="`${selectedNodeId}-${nodeType}`"
@@ -246,49 +250,118 @@
 
             <q-separator class="q-my-md" />
 
-            <div class="config-section">
+            <div v-if="nodeType !== 'start'" class="config-section">
               <div class="config-section-title">
                 <q-icon name="link" size="16px" class="q-mr-xs" />
                 {{ t('wfInputMapping') }}
+                <span class="config-hint">{{ t('wfInputMappingHint') }}</span>
                 <q-space />
+                <q-btn
+                  flat
+                  dense
+                  size="sm"
+                  color="primary"
+                  icon="schema"
+                  :label="t('wfSyncFromSchema')"
+                  :disable="inputSchemaFields.length === 0"
+                  @click.stop="syncInputMappingsWithSchema"
+                />
                 <VariableInsertDropdown
                   :upstream-nodes="upstreamNodeOptions"
                   :node-output-fields="nodeOutputFields"
                   @insert="onVariableInsert"
                 />
               </div>
+              <q-banner v-if="inputSchemaFields.length > 0" dense class="mapping-schema-banner">
+                {{ t('wfInputMappingSchemaHint', { count: inputSchemaFields.length }) }}
+              </q-banner>
               <div class="input-mapping-editor">
-                <div v-for="(mapping, index) in inputMappings" :key="mapping.id" class="mapping-row">
-                  <q-input
-                    v-model="mapping.target"
-                    outlined dense
-                    :placeholder="t('wfMappingTargetPh')"
-                    class="mapping-target"
-                  />
-                  <q-icon name="arrow_forward" size="18px" class="mapping-arrow" />
-                  <q-select
-                    v-model="mapping.sourceNode"
-                    :options="upstreamNodeOptions"
-                    outlined dense
-                    emit-value
-                    map-options
-                    :placeholder="t('wfMappingNodePh')"
-                    class="mapping-node-select"
-                    @update:model-value="onSourceNodeChange(index)"
-                  />
-                  <q-select
-                    v-model="mapping.sourceField"
-                    :options="getFieldOptions(mapping.sourceNode)"
-                    outlined dense
-                    emit-value
-                    map-options
-                    :placeholder="t('wfMappingFieldPh')"
-                    class="mapping-field-select"
-                    :disable="!mapping.sourceNode"
-                  />
-                  <q-btn type="button" flat dense round icon="delete" size="sm" color="negative" @click.stop="removeMapping(index)" />
+                <div v-if="inputMappings.length === 0" class="mapping-empty">
+                  {{ upstreamNodeOptions.length > 0 ? t('wfMappingEmpty') : t('wfMappingNoUpstream') }}
                 </div>
-                <q-btn type="button" flat dense color="primary" :label="t('wfAddMapping')" size="sm" class="q-mt-xs" @click.stop="addMapping" />
+                <div
+                  v-for="(mapping, index) in inputMappings"
+                  :key="mapping.id"
+                  class="mapping-card"
+                  :class="{ 'mapping-card--required': mapping.schemaRequired }"
+                >
+                  <div class="mapping-card-head">
+                    <div class="mapping-target-info">
+                      <div v-if="mapping.schemaField" class="mapping-target-static">
+                        <span class="mapping-target-name">{{ mapping.target }}</span>
+                        <q-badge v-if="mapping.schemaRequired" color="negative" outline :label="t('wfRequired')" />
+                        <q-badge color="grey-7" outline :label="mapping.schemaType || 'any'" />
+                      </div>
+                      <q-input
+                        v-else
+                        v-model="mapping.target"
+                        outlined dense
+                        :placeholder="t('wfMappingTargetPh')"
+                        class="mapping-target"
+                      />
+                      <div v-if="mapping.schemaDescription" class="mapping-field-desc">
+                        {{ mapping.schemaDescription }}
+                      </div>
+                    </div>
+                    <q-space />
+                    <q-btn
+                      type="button"
+                      flat
+                      dense
+                      round
+                      :icon="mapping.mode === 'expr' ? 'account_tree' : 'edit_note'"
+                      size="sm"
+                      color="primary"
+                      @click.stop="toggleMappingMode(index)"
+                    >
+                      <q-tooltip>{{ mapping.mode === 'expr' ? t('wfUseFieldPicker') : t('wfUseExpression') }}</q-tooltip>
+                    </q-btn>
+                    <q-btn
+                      type="button"
+                      flat
+                      dense
+                      round
+                      icon="delete"
+                      size="sm"
+                      color="negative"
+                      :disable="mapping.schemaRequired"
+                      @click.stop="removeMapping(index)"
+                    />
+                  </div>
+
+                  <div v-if="mapping.mode !== 'expr'" class="mapping-source-grid">
+                    <q-select
+                      v-model="mapping.sourceNode"
+                      :options="upstreamNodeOptions"
+                      outlined dense
+                      emit-value
+                      map-options
+                      :placeholder="t('wfMappingNodePh')"
+                      class="mapping-node-select"
+                      @update:model-value="onSourceNodeChange(index)"
+                    />
+                    <q-icon name="arrow_forward" size="18px" class="mapping-arrow" />
+                    <q-select
+                      v-model="mapping.sourceField"
+                      :options="getFieldOptions(mapping.sourceNode)"
+                      outlined dense
+                      emit-value
+                      map-options
+                      :placeholder="t('wfMappingFieldPh')"
+                      class="mapping-field-select"
+                      :disable="!mapping.sourceNode"
+                    />
+                  </div>
+                  <q-input
+                    v-else
+                    v-model="mapping.expression"
+                    outlined
+                    dense
+                    :placeholder="t('wfMappingExpressionPh')"
+                    class="mapping-expression"
+                  />
+                </div>
+                <q-btn type="button" flat dense color="primary" :label="t('wfAddMapping')" size="sm" class="q-mt-xs" icon="add" @click.stop="addMapping" />
               </div>
             </div>
 
@@ -307,8 +380,18 @@
                   rows="4"
                   placeholder="{&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {}}"
                   class="config-input"
+                  :error="!!inputSchemaError"
+                  :error-message="inputSchemaError"
                   @blur="onInputSchemaBlur"
                 />
+                <div v-if="inputSchemaFields.length > 0" class="schema-field-list">
+                  <div v-for="field in inputSchemaFields" :key="field.name" class="schema-field-row">
+                    <span class="schema-field-name">{{ field.name }}</span>
+                    <q-badge color="grey-7" outline :label="field.type" />
+                    <q-badge v-if="field.required" color="negative" outline :label="t('wfRequired')" />
+                    <span v-if="field.description" class="schema-field-desc">{{ field.description }}</span>
+                  </div>
+                </div>
                 <q-btn flat dense size="sm" color="primary" :label="t('wfSchemaExample')" icon="auto_fix_high" @click="fillInputSchemaExample" class="q-mt-xs" />
               </div>
             </div>
@@ -328,8 +411,18 @@
                   rows="4"
                   placeholder="{&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {}}"
                   class="config-input"
+                  :error="!!outputSchemaError"
+                  :error-message="outputSchemaError"
                   @blur="onOutputSchemaBlur"
                 />
+                <div v-if="outputSchemaFields.length > 0" class="schema-field-list">
+                  <div v-for="field in outputSchemaFields" :key="field.name" class="schema-field-row">
+                    <span class="schema-field-name">{{ field.name }}</span>
+                    <q-badge color="grey-7" outline :label="field.type" />
+                    <q-badge v-if="field.required" color="negative" outline :label="t('wfRequired')" />
+                    <span v-if="field.description" class="schema-field-desc">{{ field.description }}</span>
+                  </div>
+                </div>
                 <q-btn flat dense size="sm" color="primary" :label="t('wfSchemaExample')" icon="auto_fix_high" @click="fillOutputSchemaExample" class="q-mt-xs" />
               </div>
             </div>
@@ -379,14 +472,14 @@
 
     <!-- 执行结果对话框（画布运行后立即查看） -->
     <q-dialog v-model="executionDialogOpen" persistent>
-      <q-card class="wf-history-dialog-card">
+      <q-card class="wf-exec-dialog-card">
         <q-card-section class="row items-center q-pb-none">
           <div class="text-h6">{{ t('wfExecutionResult') }}</div>
           <q-space />
           <q-btn icon="close" flat round dense v-close-popup />
         </q-card-section>
 
-        <q-card-section>
+        <q-card-section class="wf-exec-dialog-content">
           <template v-if="executionResult">
             <q-banner class="bg-grey-2 q-mb-md" dense>
               <template #avatar>
@@ -421,6 +514,39 @@
       </q-card>
     </q-dialog>
 
+    <q-dialog v-model="runDialogOpen">
+      <q-card class="wf-run-dialog-card">
+        <q-card-section class="row items-center q-pb-sm">
+          <div class="text-h6">{{ t('wfExecute') }}</div>
+          <q-space />
+          <q-btn icon="close" flat round dense v-close-popup />
+        </q-card-section>
+        <q-card-section class="q-pt-none">
+          <q-input
+            v-model="runMessage"
+            outlined
+            type="textarea"
+            rows="5"
+            :label="t('wfExecuteInput')"
+            :placeholder="t('wfExecuteInputPh')"
+            class="q-mb-md"
+          />
+          <q-input
+            v-model="runVariablesJson"
+            outlined
+            type="textarea"
+            rows="5"
+            :label="t('wfRunVariables')"
+            :placeholder="t('wfRunVariablesPh')"
+          />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat :label="t('cancel')" v-close-popup />
+          <q-btn color="primary" icon="play_arrow" :label="t('wfExecute')" :loading="executing || runAnimating" unelevated @click="confirmRunWorkflow" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
     <!-- 执行历史（列表 + 内嵌详情，详情可返回列表） -->
     <!-- full-width：解除 Quasar 在 sm+ 对对话框内层默认 max-width:560px，否则表格会被压得很窄 -->
     <q-dialog v-model="historyDialogOpen" full-width>
@@ -449,14 +575,14 @@
           <q-btn v-if="!historyShowDetail" flat round dense icon="refresh" @click="refreshExecutionHistory" />
           <q-btn flat round dense icon="close" v-close-popup />
         </q-card-section>
-        <q-card-section class="col scroll wf-history-dialog-body">
+        <q-card-section class="col scroll wf-history-dialog-body" style="overflow-x: hidden;">
           <template v-if="historyShowDetail && executionResult">
             <q-banner class="bg-grey-2 q-mb-md" dense>
               <template #avatar>
                 <q-icon :name="executionResult.output ? 'check_circle' : 'error'" :color="executionResult.output ? 'positive' : 'negative'" />
               </template>
               {{ t('wfDuration') }}: {{ executionResult.duration_ms }}ms
-              <span v-if="executionResult.node_results && executionResult.node_results.length"> · {{ executionResult.node_results.length }} {{ t('nodes') }}</span>
+              <span v-if="nodeResultsList.length"> · {{ nodeResultsList.length }} {{ t('nodes') }}</span>
             </q-banner>
 
             <div class="text-subtitle2 q-mb-sm">{{ t('wfNodeResults') }}:</div>
@@ -653,6 +779,9 @@ const {
 const runAnimating = ref(false)
 const historyDialogOpen = ref(false)
 const historyLoading = ref(false)
+const runDialogOpen = ref(false)
+const runMessage = ref('')
+const runVariablesJson = ref('')
 /** 历史弹窗内：从列表进入某次运行的详情 */
 const historyShowDetail = ref(false)
 const historyDetailMeta = ref<{ id: number; started_at?: string } | null>(null)
@@ -673,6 +802,10 @@ const nodeResultsList = computed((): Record<string, unknown>[] => {
   if (!nr) return []
   if (Array.isArray(nr)) {
     return nr.map((r) => r as Record<string, unknown>)
+  }
+  if (typeof nr === 'object') {
+    return Object.values(nr as Record<string, unknown>)
+      .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === 'object' && !Array.isArray(r))
   }
   return []
 })
@@ -706,14 +839,14 @@ const nodeResultsEntries = computed(() => {
 })
 
 /** 错误列固定像素；其余列按比例分「表格宽度 − 错误列」 */
-const WF_HISTORY_ERROR_COL_PX = 500
+const WF_HISTORY_ERROR_COL_PX = 600
 
 /** 与旧版百分比方案一致：前四列份额之和用于分配剩余宽度（不必为 100） */
 const WF_HISTORY_REMAIN_SHARE = {
   id: 6,
   status: 11,
   duration: 9,
-  started_at: 50
+  started_at: 30
 } as const
 
 const WF_HISTORY_REMAIN_SUM =
@@ -753,6 +886,26 @@ function formatWorkflowHistoryStartedAt (raw: unknown): string {
   if (Number.isNaN(d.getTime())) return s.length > 22 ? `${s.slice(0, 22)}…` : s
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+function startNodeUserPrompt (): string {
+  const n = nodes.value.find(node => {
+    const data = node.data as Record<string, unknown>
+    return data.nodeType === 'start'
+  })
+  const cfg = ((n?.data as Record<string, unknown> | undefined)?.config || {}) as Record<string, unknown>
+  const raw = cfg.user_prompt
+  return raw == null ? '' : String(raw)
+}
+
+function parseRunVariables (): Record<string, unknown> | undefined {
+  const raw = runVariablesJson.value.trim()
+  if (raw === '') return undefined
+  const parsed = JSON.parse(raw) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('variables must be a JSON object')
+  }
+  return parsed as Record<string, unknown>
 }
 
 function delay (ms: number): Promise<void> {
@@ -832,11 +985,9 @@ async function playRunEdgeAnimation (resp: ExecuteWorkflowResponse): Promise<voi
       const st = el.style as Record<string, string | number>
       st.stroke = '#fb8c00'
       st.strokeWidth = 3
-      el.animated = true
       await delay(280)
       st.stroke = '#2e7d32'
       st.strokeWidth = 2.5
-      el.animated = false
       await delay(100)
     }
   } finally {
@@ -845,8 +996,25 @@ async function playRunEdgeAnimation (resp: ExecuteWorkflowResponse): Promise<voi
 }
 
 async function onRunWorkflow () {
-  const payload = await executeWorkflowDirect()
+  runMessage.value = startNodeUserPrompt()
+  runVariablesJson.value = ''
+  runDialogOpen.value = true
+}
+
+async function confirmRunWorkflow () {
+  let variables: Record<string, unknown> | undefined
+  try {
+    variables = parseRunVariables()
+  } catch {
+    $q.notify({ type: 'negative', message: t('wfInvalidVariables') })
+    return
+  }
+  const payload = await executeWorkflowDirect({
+    message: runMessage.value.trim(),
+    variables
+  })
   if (!payload) return
+  runDialogOpen.value = false
   runAnimating.value = true
   try {
     await playRunEdgeAnimation(payload)
@@ -876,7 +1044,9 @@ function workflowExecutionToDisplay (exec: WorkflowExecution): ExecuteWorkflowRe
   return {
     output: exec.output,
     node_results: map,
-    duration_ms: exec.duration_ms
+    node_result_order: Object.keys(map),
+    duration_ms: exec.duration_ms,
+    execution_id: exec.id
   }
 }
 
@@ -1050,11 +1220,86 @@ function newMappingRowId (): string {
 interface InputMapping {
   id: string
   target: string
+  mode: 'field' | 'expr'
   sourceNode: string | null
   sourceField: string | null
+  expression: string
+  schemaField?: boolean
+  schemaType?: string
+  schemaRequired?: boolean
+  schemaDescription?: string
 }
 
 const inputMappings = ref<InputMapping[]>([])
+const inputSchemaError = ref('')
+const outputSchemaError = ref('')
+
+interface SchemaField {
+  name: string
+  type: string
+  required: boolean
+  description: string
+}
+
+function schemaRequiredSet (schema: unknown): Set<string> {
+  const out = new Set<string>()
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return out
+  const raw = (schema as Record<string, unknown>).required
+  if (Array.isArray(raw)) {
+    raw.forEach(v => {
+      if (typeof v === 'string' && v.trim()) out.add(v.trim())
+    })
+  }
+  return out
+}
+
+function schemaFieldsFromSchema (schema: unknown): SchemaField[] {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return []
+  const root = schema as Record<string, unknown>
+  const props = root.properties
+  if (!props || typeof props !== 'object' || Array.isArray(props)) return []
+  const required = schemaRequiredSet(root)
+  return Object.entries(props as Record<string, unknown>).map(([name, raw]) => {
+    const field = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+    const type = schemaTypeLabel(field)
+    const description = typeof field.description === 'string' ? field.description : ''
+    const fieldRequired = field.required === true || required.has(name)
+    return { name, type, required: fieldRequired, description }
+  })
+}
+
+function schemaTypeLabel (field: Record<string, unknown>): string {
+  const rawType = field.type
+  if (typeof rawType === 'string' && rawType.trim()) return rawType.trim()
+  if (Array.isArray(rawType)) {
+    const types = rawType
+      .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+      .map(item => item.trim())
+    if (types.length > 0) return types.join(' | ')
+  }
+  if (Array.isArray(field.enum)) return 'enum'
+  if (Array.isArray(field.oneOf)) return 'oneOf'
+  if (Array.isArray(field.anyOf)) return 'anyOf'
+  if (Array.isArray(field.allOf)) return 'allOf'
+  return 'any'
+}
+
+const inputSchemaFields = computed(() => schemaFieldsFromSchema(selectedNodeData.value.inputSchema))
+const outputSchemaFields = computed(() => schemaFieldsFromSchema(selectedNodeData.value.outputSchema))
+
+function applySchemaMetadataToMappings (rows: InputMapping[], fields: SchemaField[] = inputSchemaFields.value): InputMapping[] {
+  const byName = new Map(fields.map(f => [f.name, f]))
+  return rows.map(row => {
+    const meta = byName.get(row.target)
+    return {
+      ...row,
+      schemaField: Boolean(meta),
+      schemaType: meta?.type,
+      schemaRequired: meta?.required,
+      schemaDescription: meta?.description
+    }
+  })
+}
 
 /** Reverse `{{.<nodeLabel>.<field>}}` saved in node config → editor rows */
 function parseInputMappingFromConfig (
@@ -1073,21 +1318,54 @@ function parseInputMappingFromConfig (
     if (typeof expr !== 'string') continue
     const m = expr.match(/^\{\{\.([^}]+)\}\}$/)
     if (!m) {
-      rows.push({ id: newMappingRowId(), target, sourceNode: null, sourceField: null })
+      rows.push({ id: newMappingRowId(), target, mode: 'expr', sourceNode: null, sourceField: null, expression: expr })
       continue
     }
     const inner = m[1]
     const dotIdx = inner.indexOf('.')
     if (dotIdx < 0) {
-      rows.push({ id: newMappingRowId(), target, sourceNode: null, sourceField: null })
+      rows.push({ id: newMappingRowId(), target, mode: 'expr', sourceNode: null, sourceField: null, expression: expr })
       continue
     }
     const sourceLabel = inner.slice(0, dotIdx)
     const sourceField = inner.slice(dotIdx + 1)
     const sourceNode = labelToId.get(sourceLabel) ?? null
-    rows.push({ id: newMappingRowId(), target, sourceNode, sourceField: sourceField || null })
+    rows.push({
+      id: newMappingRowId(),
+      target,
+      mode: sourceNode ? 'field' : 'expr',
+      sourceNode,
+      sourceField: sourceNode ? sourceField || null : null,
+      expression: sourceNode ? '' : expr
+    })
   }
-  return rows
+  return applySchemaMetadataToMappings(rows)
+}
+
+function mergeMappingsWithSchemaFields (rows: InputMapping[], fields: SchemaField[]): InputMapping[] {
+  const existing = new Map(rows.map(row => [row.target, row]))
+  const next: InputMapping[] = []
+  for (const field of fields) {
+    const existingRow = existing.get(field.name)
+    if (existingRow) {
+      next.push(existingRow)
+    } else {
+      next.push({
+        id: newMappingRowId(),
+        target: field.name,
+        mode: 'field',
+        sourceNode: null,
+        sourceField: null,
+        expression: ''
+      })
+    }
+  }
+  for (const row of rows) {
+    if (!fields.some(field => field.name === row.target)) {
+      next.push(row)
+    }
+  }
+  return applySchemaMetadataToMappings(next, fields)
 }
 
 watch(selectedNodeId, (id) => {
@@ -1100,14 +1378,21 @@ watch(selectedNodeId, (id) => {
     const node = nodes.value.find(n => n.id === id)
     const cfg = (node?.data as Record<string, unknown> | undefined)?.config as Record<string, unknown> | undefined
     const im = cfg?.input_mapping as Record<string, string> | undefined
-    inputMappings.value = parseInputMappingFromConfig(im, nodes.value)
+    const rows = parseInputMappingFromConfig(im, nodes.value)
+    inputMappings.value = mergeMappingsWithSchemaFields(rows, inputSchemaFields.value)
   })
 }, { immediate: true })
 
 watch(inputMappings, (val) => {
   const mapping: Record<string, string> = {}
   val.forEach(m => {
-    if (m.target && m.sourceNode && m.sourceField) {
+    if (!m.target) return
+    if (m.mode === 'expr') {
+      const expr = m.expression.trim()
+      if (expr) mapping[m.target] = expr
+      return
+    }
+    if (m.sourceNode && m.sourceField) {
       const sourceLabel = getNodeLabelById(m.sourceNode)
       mapping[m.target] = `{{.${sourceLabel}.${m.sourceField}}}`
     }
@@ -1167,13 +1452,34 @@ function addMapping () {
   inputMappings.value.push({
     id: newMappingRowId(),
     target: '',
+    mode: 'field',
     sourceNode: null,
-    sourceField: null
+    sourceField: null,
+    expression: ''
   })
 }
 
 function removeMapping (index: number) {
+  if (inputMappings.value[index]?.schemaRequired) return
   inputMappings.value.splice(index, 1)
+}
+
+function toggleMappingMode (index: number) {
+  const row = inputMappings.value[index]
+  if (!row) return
+  if (row.mode === 'expr') {
+    row.mode = 'field'
+    row.expression = ''
+  } else {
+    row.mode = 'expr'
+    row.expression = row.sourceNode && row.sourceField ? `{{.${getNodeLabelById(row.sourceNode)}.${row.sourceField}}}` : ''
+    row.sourceNode = null
+    row.sourceField = null
+  }
+}
+
+function syncInputMappingsWithSchema () {
+  inputMappings.value = mergeMappingsWithSchemaFields(inputMappings.value, inputSchemaFields.value)
 }
 
 const inputSchemaJson = ref('')
@@ -1181,22 +1487,33 @@ const outputSchemaJson = ref('')
 
 watch(() => selectedNodeData.value.inputSchema, (val) => {
   inputSchemaJson.value = val ? JSON.stringify(val, null, 2) : ''
+  inputSchemaError.value = ''
 }, { immediate: true })
 
 watch(() => selectedNodeData.value.outputSchema, (val) => {
   outputSchemaJson.value = val ? JSON.stringify(val, null, 2) : ''
+  outputSchemaError.value = ''
 }, { immediate: true })
 
 function onInputSchemaBlur () {
   try {
-    updateSelectedNodeData(d => ({ ...d, inputSchema: inputSchemaJson.value ? JSON.parse(inputSchemaJson.value) : undefined }))
-  } catch { /* ignore */ }
+    const parsed = inputSchemaJson.value ? JSON.parse(inputSchemaJson.value) : undefined
+    inputSchemaError.value = ''
+    updateSelectedNodeData(d => ({ ...d, inputSchema: parsed }))
+    inputMappings.value = mergeMappingsWithSchemaFields(inputMappings.value, schemaFieldsFromSchema(parsed))
+  } catch (err) {
+    inputSchemaError.value = err instanceof Error ? err.message : t('wfInvalidSchemaJson')
+  }
 }
 
 function onOutputSchemaBlur () {
   try {
-    updateSelectedNodeData(d => ({ ...d, outputSchema: outputSchemaJson.value ? JSON.parse(outputSchemaJson.value) : undefined }))
-  } catch { /* ignore */ }
+    const parsed = outputSchemaJson.value ? JSON.parse(outputSchemaJson.value) : undefined
+    outputSchemaError.value = ''
+    updateSelectedNodeData(d => ({ ...d, outputSchema: parsed }))
+  } catch (err) {
+    outputSchemaError.value = err instanceof Error ? err.message : t('wfInvalidSchemaJson')
+  }
 }
 
 function showSchemaExample () {
@@ -1365,7 +1682,7 @@ function onMoveEnd (e: any) {
 }
 
 .wf-editor.wf-editor--with-right {
-  grid-template-columns: 240px minmax(0, 1fr) 400px;
+  grid-template-columns: 240px minmax(0, 1fr) 460px;
 }
 
 .wf-sidebar {
@@ -1558,27 +1875,123 @@ function onMoveEnd (e: any) {
   margin-top: 8px;
 }
 
-.mapping-row {
+.mapping-schema-banner {
+  margin: 0 0 8px;
+  background: #f7fbff;
+  color: #2f5f8f;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+}
+
+.mapping-empty {
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  color: #8c8c8c;
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.mapping-card {
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: #fff;
+}
+
+.mapping-card--required {
+  border-left: 3px solid #c10015;
+}
+
+.mapping-card-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin-bottom: 8px;
 }
 
+.mapping-target-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.mapping-target-static {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  min-width: 0;
+}
+
+.mapping-target-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapping-field-desc,
+.schema-field-desc {
+  color: #8c8c8c;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.mapping-source-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
 .mapping-target {
-  width: 100px;
+  width: 180px;
 }
 
 .mapping-node-select {
-  width: 120px;
+  min-width: 0;
 }
 
 .mapping-field-select {
-  width: 100px;
+  min-width: 0;
+}
+
+.mapping-expression {
+  width: 100%;
 }
 
 .mapping-arrow {
   color: #8c8c8c;
+}
+
+.schema-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.schema-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #fafafa;
+}
+
+.schema-field-name {
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .config-actions {
@@ -1649,49 +2062,41 @@ function onMoveEnd (e: any) {
   min-height: 280px;
 }
 
-/*
- * 连线方向感：沿路径流动的虚线（stroke-dashoffset），配合默认 marker-end 箭头表示从 source → target。
- * 仅作用于可见 path，不影响透明命中层 vue-flow__edge-interaction。
- */
 .wf-vue-flow-root .vue-flow__edge-path {
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-dasharray: 10 14;
-  animation: wf-edge-flow 1.2s linear infinite;
+  stroke-dasharray: none;
 }
 
 .wf-vue-flow-root .vue-flow__connection-path {
   stroke-linecap: round;
-  stroke-dasharray: 10 14;
-  animation: wf-edge-flow 1.2s linear infinite;
+  stroke-dasharray: none;
 }
 
-@keyframes wf-edge-flow {
-  to {
-    stroke-dashoffset: -24;
-  }
+.wf-exec-dialog-card {
+  width: 900px;
+  max-width: 90vw;
+  max-height: 90vh;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .wf-vue-flow-root .vue-flow__edge-path,
-  .wf-vue-flow-root .vue-flow__connection-path {
-    animation: none;
-    stroke-dasharray: none;
+@media (min-width: 600px) {
+  .q-dialog__inner--minimized > .wf-exec-dialog-card {
+    max-width: 90vw;
   }
 }
 
 .wf-history-dialog-card {
-  width: min(1120px, 96vw);
-  max-width: 96vw;
-  min-width: min(320px, 96vw);
+  width: 900px;
+  max-width: 90vw;
+  min-width: min(320px, 90vw);
   max-height: 90vh;
 }
 
 /* 执行历史：在 full-width 对话框内居中；卡片自身限制宽度，避免贴边或 100vw 滚动条 */
 .wf-history-dialog-card--history {
-  width: 100%;
-  max-width: min(1320px, 100%);
+  width: 900px;
+  max-width: 90vw;
   margin-left: auto;
   margin-right: auto;
   min-width: 0;
@@ -1762,15 +2167,27 @@ function onMoveEnd (e: any) {
   word-break: break-word;
 }
 
+.wf-exec-dialog-content {
+  overflow-x: auto;
+}
+
 .wf-exec-pre {
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: break-all;
+  overflow-wrap: break-word;
   margin: 0;
   font-size: 13px;
+  max-width: 100%;
 }
 
 .wf-exec-pre--sm {
   font-size: 12px;
+}
+
+.wf-run-dialog-card {
+  width: min(560px, 96vw);
+  max-width: 96vw;
+  min-width: min(320px, 96vw);
 }
 
 .wf-node-result-card {

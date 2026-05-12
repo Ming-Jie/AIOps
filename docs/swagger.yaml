@@ -1,6 +1,6 @@
 basePath: /api/v1
 definitions:
-  github_com_fisk086_taskmate_internal_schema.APIResponse:
+  github_com_fisk086_sya_internal_schema.APIResponse:
     properties:
       code:
         type: integer
@@ -8,7 +8,7 @@ definitions:
       message:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.AuditLogCreateRequest:
+  github_com_fisk086_sya_internal_schema.AuditLogCreateRequest:
     properties:
       action:
         type: string
@@ -31,18 +31,18 @@ definitions:
       tool_name:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.AuthErrorResponse:
+  github_com_fisk086_sya_internal_schema.AuthErrorResponse:
     properties:
       error:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.CapabilityTreeNode:
+  github_com_fisk086_sya_internal_schema.CapabilityTreeNode:
     properties:
       capability_id:
         type: integer
       children:
         items:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CapabilityTreeNode'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CapabilityTreeNode'
         type: array
       id:
         type: integer
@@ -60,7 +60,7 @@ definitions:
       sort_order:
         type: integer
     type: object
-  github_com_fisk086_taskmate_internal_schema.ChangePasswordRequest:
+  github_com_fisk086_sya_internal_schema.ChangePasswordRequest:
     properties:
       current_password:
         type: string
@@ -71,14 +71,14 @@ definitions:
     - current_password
     - new_password
     type: object
-  github_com_fisk086_taskmate_internal_schema.ChatImagePart:
+  github_com_fisk086_sya_internal_schema.ChatImagePart:
     properties:
       base64:
         type: string
       mime:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.ChatRequest:
+  github_com_fisk086_sya_internal_schema.ChatRequest:
     properties:
       agent_id:
         type: integer
@@ -99,7 +99,7 @@ definitions:
         type: string
       image_parts:
         items:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.ChatImagePart'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.ChatImagePart'
         type: array
       image_url:
         type: string
@@ -123,7 +123,7 @@ definitions:
       workflow_id:
         type: integer
     type: object
-  github_com_fisk086_taskmate_internal_schema.CreateAgentRequest:
+  github_com_fisk086_sya_internal_schema.CreateAgentRequest:
     properties:
       category:
         type: string
@@ -136,12 +136,12 @@ definitions:
         minLength: 1
         type: string
       runtime_profile:
-        $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.RuntimeProfile'
+        $ref: '#/definitions/github_com_fisk086_sya_internal_schema.RuntimeProfile'
     required:
     - description
     - name
     type: object
-  github_com_fisk086_taskmate_internal_schema.CreateChatSessionRequest:
+  github_com_fisk086_sya_internal_schema.CreateChatSessionRequest:
     properties:
       agent_id:
         minimum: 1
@@ -151,7 +151,7 @@ definitions:
     required:
     - agent_id
     type: object
-  github_com_fisk086_taskmate_internal_schema.CreateGroupRequest:
+  github_com_fisk086_sya_internal_schema.CreateGroupRequest:
     properties:
       agent_ids:
         items:
@@ -166,7 +166,7 @@ definitions:
     - agent_ids
     - name
     type: object
-  github_com_fisk086_taskmate_internal_schema.CreateMCPConfigRequest:
+  github_com_fisk086_sya_internal_schema.CreateMCPConfigRequest:
     properties:
       config:
         additionalProperties: {}
@@ -183,8 +183,10 @@ definitions:
     - key
     - name
     type: object
-  github_com_fisk086_taskmate_internal_schema.CreateSkillRequest:
+  github_com_fisk086_sya_internal_schema.CreateSkillRequest:
     properties:
+      content:
+        type: string
       description:
         type: string
       key:
@@ -198,7 +200,7 @@ definitions:
     - name
     - source_ref
     type: object
-  github_com_fisk086_taskmate_internal_schema.CreateWorkflowRequest:
+  github_com_fisk086_sya_internal_schema.CreateWorkflowRequest:
     properties:
       config:
         additionalProperties: {}
@@ -228,24 +230,30 @@ definitions:
     - name
     - step_agent_ids
     type: object
-  github_com_fisk086_taskmate_internal_schema.GetMeResponse:
+  github_com_fisk086_sya_internal_schema.GetMeResponse:
     properties:
       user:
-        $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse'
+        $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UserResponse'
     type: object
-  github_com_fisk086_taskmate_internal_schema.IMConfig:
+  github_com_fisk086_sya_internal_schema.IMConfig:
     properties:
       app_id:
         type: string
       app_secret:
         type: string
-      verification_token:
-        type: string
-      encrypt_key:
-        type: string
       auto_reply:
         type: boolean
       bot_name:
+        type: string
+      encrypt_key:
+        type: string
+      lark_open_domain:
+        description: LarkOpenDomain is the Open Platform base URL, e.g. https://open.feishu.cn
+          or https://open.larksuite.com
+        type: string
+      lark_region:
+        description: 'LarkRegion legacy: "cn" | "intl" when lark_open_domain empty
+          (prefer lark_open_domain in UI).'
         type: string
       notify_on_approval:
         type: boolean
@@ -255,10 +263,19 @@ definitions:
         type: string
       telegram_token:
         type: string
+      verification_token:
+        description: 'Lark event subscription: URL challenge (LARK_BOT_VERIFICATION_TOKEN)
+          and payload decrypt (LARK_BOT_ENCRYPT_KEY).'
+        type: string
       webhook_url:
         type: string
+      ws_enabled:
+        description: 'WsEnabled: when true (or nil legacy), server global Start()
+          opens WebSocket on boot; false = register credentials only, manual Start
+          per bot.'
+        type: boolean
     type: object
-  github_com_fisk086_taskmate_internal_schema.LoginRequest:
+  github_com_fisk086_sya_internal_schema.LoginRequest:
     properties:
       captcha_code:
         type: string
@@ -272,7 +289,7 @@ definitions:
     - password
     - username
     type: object
-  github_com_fisk086_taskmate_internal_schema.MCPServer:
+  github_com_fisk086_sya_internal_schema.MCPServer:
     properties:
       config_id:
         type: integer
@@ -290,26 +307,26 @@ definitions:
       tool_name:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.MessageResponse:
+  github_com_fisk086_sya_internal_schema.MessageResponse:
     properties:
       message:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.ProfileUpdateResponse:
+  github_com_fisk086_sya_internal_schema.ProfileUpdateResponse:
     properties:
       message:
         type: string
       user:
-        $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse'
+        $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UserResponse'
     type: object
-  github_com_fisk086_taskmate_internal_schema.RefreshTokenRequest:
+  github_com_fisk086_sya_internal_schema.RefreshTokenRequest:
     properties:
       refresh_token:
         type: string
     required:
     - refresh_token
     type: object
-  github_com_fisk086_taskmate_internal_schema.RegisterRequest:
+  github_com_fisk086_sya_internal_schema.RegisterRequest:
     properties:
       captcha_code:
         type: string
@@ -329,14 +346,14 @@ definitions:
     - password
     - username
     type: object
-  github_com_fisk086_taskmate_internal_schema.RegisterSuccessResponse:
+  github_com_fisk086_sya_internal_schema.RegisterSuccessResponse:
     properties:
       message:
         type: string
       user:
-        $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse'
+        $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UserResponse'
     type: object
-  github_com_fisk086_taskmate_internal_schema.RuntimeProfile:
+  github_com_fisk086_sya_internal_schema.RuntimeProfile:
     properties:
       approval_mode:
         type: string
@@ -357,7 +374,7 @@ definitions:
       goal:
         type: string
       im_config:
-        $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.IMConfig'
+        $ref: '#/definitions/github_com_fisk086_sya_internal_schema.IMConfig'
       im_enabled:
         type: string
       llm_model:
@@ -389,23 +406,23 @@ definitions:
       temperature:
         type: number
     type: object
-  github_com_fisk086_taskmate_internal_schema.StopChatRequest:
+  github_com_fisk086_sya_internal_schema.StopChatRequest:
     properties:
       session_id:
         type: string
     required:
     - session_id
     type: object
-  github_com_fisk086_taskmate_internal_schema.SyncMCPServerRequest:
+  github_com_fisk086_sya_internal_schema.SyncMCPServerRequest:
     properties:
       create_capability:
         type: boolean
       tools:
         items:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.MCPServer'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.MCPServer'
         type: array
     type: object
-  github_com_fisk086_taskmate_internal_schema.TokenPairResponse:
+  github_com_fisk086_sya_internal_schema.TokenPairResponse:
     properties:
       access_token:
         type: string
@@ -416,7 +433,7 @@ definitions:
       token_type:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.TokenResponse:
+  github_com_fisk086_sya_internal_schema.TokenResponse:
     properties:
       access_token:
         type: string
@@ -427,9 +444,9 @@ definitions:
       token_type:
         type: string
       user:
-        $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UserResponse'
+        $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UserResponse'
     type: object
-  github_com_fisk086_taskmate_internal_schema.UpdateAgentRequest:
+  github_com_fisk086_sya_internal_schema.UpdateAgentRequest:
     properties:
       category:
         type: string
@@ -438,16 +455,16 @@ definitions:
       name:
         type: string
       runtime_profile:
-        $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.RuntimeProfile'
+        $ref: '#/definitions/github_com_fisk086_sya_internal_schema.RuntimeProfile'
     type: object
-  github_com_fisk086_taskmate_internal_schema.UpdateCapabilityTreeRequest:
+  github_com_fisk086_sya_internal_schema.UpdateCapabilityTreeRequest:
     properties:
       nodes:
         items:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CapabilityTreeNode'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CapabilityTreeNode'
         type: array
     type: object
-  github_com_fisk086_taskmate_internal_schema.UpdateGroupRequest:
+  github_com_fisk086_sya_internal_schema.UpdateGroupRequest:
     properties:
       agent_ids:
         items:
@@ -456,15 +473,17 @@ definitions:
       name:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.UpdateProfileRequest:
+  github_com_fisk086_sya_internal_schema.UpdateProfileRequest:
     properties:
       email:
         type: string
       full_name:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.UpdateSkillRequest:
+  github_com_fisk086_sya_internal_schema.UpdateSkillRequest:
     properties:
+      content:
+        type: string
       description:
         type: string
       execution_mode:
@@ -480,7 +499,7 @@ definitions:
       source_ref:
         type: string
     type: object
-  github_com_fisk086_taskmate_internal_schema.UpdateWorkflowRequest:
+  github_com_fisk086_sya_internal_schema.UpdateWorkflowRequest:
     properties:
       config:
         additionalProperties: {}
@@ -498,7 +517,7 @@ definitions:
           type: integer
         type: array
     type: object
-  github_com_fisk086_taskmate_internal_schema.UserResponse:
+  github_com_fisk086_sya_internal_schema.UserResponse:
     properties:
       avatar_url:
         type: string
@@ -539,11 +558,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: List all agents
       tags:
       - agents
@@ -557,22 +576,22 @@ paths:
         name: agent
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CreateAgentRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CreateAgentRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Create a new agent
       tags:
       - agents
@@ -593,15 +612,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Delete an agent
       tags:
       - agents
@@ -621,19 +640,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Get agent by ID
       tags:
       - agents
@@ -652,26 +671,26 @@ paths:
         name: agent
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateAgentRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UpdateAgentRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Update an agent
       tags:
       - agents
@@ -692,11 +711,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Get agent capabilities
       tags:
       - agents
@@ -717,15 +736,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Get agent capability tree
       tags:
       - agents
@@ -744,22 +763,22 @@ paths:
         name: tree
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateCapabilityTreeRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UpdateCapabilityTreeRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Update agent capability tree
       tags:
       - agents
@@ -774,12 +793,32 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: List all agents (admin only, no RBAC filter)
+      tags:
+      - agents
+  /agents/for-schedule:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of agents filtered by excluding those with client execution
+        mode
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
+      summary: List agents available for schedule
       tags:
       - agents
   /audit/{id}:
@@ -796,19 +835,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Get audit log by id
@@ -853,19 +892,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Delete audit logs
@@ -911,15 +950,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: List audit logs
@@ -936,26 +975,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuditLogCreateRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuditLogCreateRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Record an audit event
@@ -994,15 +1033,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Count audit logs
@@ -1018,30 +1057,30 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.ChangePasswordRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.ChangePasswordRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.MessageResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.MessageResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
       security:
       - BearerAuth: []
       summary: Change password
@@ -1058,30 +1097,30 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.LoginRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.LoginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.TokenResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.TokenResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
       summary: Login
       tags:
       - auth
@@ -1094,15 +1133,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.GetMeResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.GetMeResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
       security:
       - BearerAuth: []
       summary: Current user profile
@@ -1117,34 +1156,34 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateProfileRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UpdateProfileRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.ProfileUpdateResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.ProfileUpdateResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
       security:
       - BearerAuth: []
       summary: Update current user profile
@@ -1161,26 +1200,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.RefreshTokenRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.RefreshTokenRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.TokenPairResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.TokenPairResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
       summary: Refresh tokens
       tags:
       - auth
@@ -1195,26 +1234,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.RegisterRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.RegisterRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.RegisterSuccessResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.RegisterSuccessResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.AuthErrorResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.AuthErrorResponse'
       summary: Register a new user
       tags:
       - auth
@@ -1230,26 +1269,26 @@ paths:
         name: req
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.ChatRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.ChatRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Chat with an agent or workflow (JSON)
@@ -1264,7 +1303,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: List chat groups
@@ -1278,14 +1317,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CreateGroupRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CreateGroupRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Create chat group
@@ -1306,7 +1345,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Delete chat group
@@ -1326,7 +1365,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Get chat group
@@ -1345,14 +1384,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateGroupRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UpdateGroupRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Update chat group
@@ -1382,15 +1421,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: List chat sessions
@@ -1407,26 +1446,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CreateChatSessionRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CreateChatSessionRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Create chat session
@@ -1458,23 +1497,23 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: List messages in a session
@@ -1491,22 +1530,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.StopChatRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.StopChatRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Stop chat stream
@@ -1524,7 +1563,7 @@ paths:
         name: req
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.ChatRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.ChatRequest'
       produces:
       - text/event-stream
       responses:
@@ -1535,15 +1574,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       security:
       - BearerAuth: []
       summary: Chat stream (SSE)
@@ -1560,11 +1599,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: List all MCP configs
       tags:
       - mcp
@@ -1578,22 +1617,22 @@ paths:
         name: config
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CreateMCPConfigRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CreateMCPConfigRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Create a new MCP config
       tags:
       - mcp
@@ -1614,15 +1653,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Delete an MCP config
       tags:
       - mcp
@@ -1641,26 +1680,26 @@ paths:
         name: config
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CreateMCPConfigRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CreateMCPConfigRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Update an MCP config
       tags:
       - mcp
@@ -1680,22 +1719,22 @@ paths:
         name: req
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.SyncMCPServerRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.SyncMCPServerRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Sync MCP server tools
       tags:
       - mcp
@@ -1713,11 +1752,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: List tools synced for an MCP config
       tags:
       - mcp
@@ -1732,11 +1771,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: List all skills
       tags:
       - skills
@@ -1750,22 +1789,22 @@ paths:
         name: skill
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CreateSkillRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CreateSkillRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Create a new skill
       tags:
       - skills
@@ -1786,16 +1825,35 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Delete a skill
+      tags:
+      - skills
+    get:
+      description: Returns one skill including content; empty DB content may be filled
+        from skills/*/SKILL.md for built-ins.
+      parameters:
+      - description: Skill ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
+      summary: Get skill by ID
       tags:
       - skills
     put:
@@ -1814,15 +1872,29 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateSkillRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UpdateSkillRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Update a skill
+      tags:
+      - skills
+  /skills/sync-builtins:
+    post:
+      description: Inserts missing skills from the server registry (skills/*/SKILL.md).
+        Does not overwrite existing rows.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
+      summary: Sync built-in skills from skills directory into the database
       tags:
       - skills
   /workflows:
@@ -1835,11 +1907,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: List agent workflows
       tags:
       - workflows
@@ -1854,18 +1926,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.CreateWorkflowRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.CreateWorkflowRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Create workflow
       tags:
       - workflows
@@ -1881,11 +1953,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Delete workflow
       tags:
       - workflows
@@ -1902,11 +1974,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Get workflow by ID
       tags:
       - workflows
@@ -1924,18 +1996,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.UpdateWorkflowRequest'
+          $ref: '#/definitions/github_com_fisk086_sya_internal_schema.UpdateWorkflowRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/github_com_fisk086_taskmate_internal_schema.APIResponse'
+            $ref: '#/definitions/github_com_fisk086_sya_internal_schema.APIResponse'
       summary: Update workflow
       tags:
       - workflows

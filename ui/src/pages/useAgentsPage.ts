@@ -332,7 +332,6 @@ export function useAgentsPage () {
       dialogOpen.value = false
       await load()
     } catch (e: unknown) {
-      console.error('saveAgent error:', e)
       const err = e as { response?: { data?: { message?: string } } }
       $q.notify({ type: 'negative', message: err.response?.data?.message ?? t('operationFailed') })
     } finally {

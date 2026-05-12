@@ -6,7 +6,7 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfMergeMode') }}</div>
-      <q-select :model-value="strField('merge_mode')" :options="[{'label':'All','value':'all'}]" outlined dense emit-value map-options class="config-input" @update:model-value="patchConfig('merge_mode', $event)" />
+      <q-select :model-value="strField('merge_mode') || 'all'" :options="mergeModeOptions" outlined dense emit-value map-options class="config-input" @update:model-value="patchConfig('merge_mode', $event)" />
     </div>
   </div>
 </template>
@@ -23,6 +23,12 @@ const props = defineProps<{
 const emit = defineEmits(['update:label', 'update:config'])
 
 const { t } = useI18n()
+
+const mergeModeOptions = computed(() => [
+  { label: t('wfMergeModeAll'), value: 'all' },
+  { label: t('wfMergeModeFirst'), value: 'first' },
+  { label: t('wfMergeModeJoin'), value: 'join' }
+])
 
 function patchConfig (key: string, value: unknown) {
   emit('update:config', { ...props.config, [key]: value })

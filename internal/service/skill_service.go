@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/fisk086/sya/internal/logger"
 	"github.com/fisk086/sya/internal/schema"
 	"github.com/fisk086/sya/internal/skills"
 	"github.com/fisk086/sya/internal/storage"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type SkillService struct {
@@ -55,7 +55,7 @@ func defaultSkillExecutionMode(skillKey string) string {
 		"builtin_skill.cert_checker", "builtin_skill.nginx_diagnose", "builtin_skill.dns_lookup",
 		"builtin_skill.datetime", "builtin_skill.regex", "builtin_skill.json_parser",
 		"builtin_skill.csv_analyzer", "builtin_skill.log_analyzer", "builtin_skill.image_analyzer",
-		"builtin_skill.terraform_plan":
+		"builtin_skill.terraform_plan", "builtin_skill.cisco", "builtin_skill.cisco_ios":
 		return schema.ExecutionModeClient
 	default:
 		return schema.ExecutionModeServer

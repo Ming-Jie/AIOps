@@ -1,6 +1,6 @@
 import { onMounted, ref } from 'vue'
 import { api } from 'boot/axios'
-import type { APIResponse, MCPConfig, MCPTool, Skill } from 'src/api/types'
+import type { APIResponse, Skill } from 'src/api/types'
 
 export type ToolNameOption = { label: string; value: string }
 
@@ -34,37 +34,7 @@ async function loadSkillToolOptions (): Promise<ToolNameOption[]> {
   }
 }
 
-/** 聚合各已启用 MCP 的 tools 列表 */
-async function loadMcpToolOptions (): Promise<ToolNameOption[]> {
-  try {
-    const { data } = await api.get<APIResponse<MCPConfig[]>>('/mcp/configs')
-    const configs = (data.data ?? []).filter((c) => c.is_active)
-    const merged: ToolNameOption[] = []
-    await Promise.all(
-      configs.map(async (cfg) => {
-        try {
-          const { data: toolsRes } = await api.get<APIResponse<MCPTool[]>>(
-            `/mcp/configs/${cfg.id}/tools`
-          )
-          for (const t of toolsRes.data ?? []) {
-            if (!t.tool_name) continue
-            const base = t.display_name?.trim()
-              ? `${t.display_name} (${t.tool_name})`
-              : t.tool_name
-            merged.push({ label: `${base} · ${cfg.name}`, value: t.tool_name })
-          }
-        } catch {
-          // 单个 MCP 失败时跳过
-        }
-      })
-    )
-    return merged
-  } catch {
-    return []
-  }
-}
-
-/** Tool 节点下拉：Skills（主） + MCP 工具；同 value 保留先出现的（Skills 优先） */
+/** Tool 节点只列服务端 Skill。MCP 调用使用专用 MCP 节点，避免服务选择和工具名混在一起。 */
 export function useToolNodeNameOptions () {
   const loading = ref(false)
   const toolOptions = ref<ToolNameOption[]>([])
@@ -72,11 +42,7 @@ export function useToolNodeNameOptions () {
   async function load (): Promise<void> {
     loading.value = true
     try {
-      const [skillOpts, mcpOpts] = await Promise.all([
-        loadSkillToolOptions(),
-        loadMcpToolOptions()
-      ])
-      toolOptions.value = dedupeByValue([...skillOpts, ...mcpOpts])
+      toolOptions.value = dedupeByValue(await loadSkillToolOptions())
     } finally {
       loading.value = false
     }

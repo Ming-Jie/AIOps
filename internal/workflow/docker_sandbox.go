@@ -28,7 +28,7 @@ func (s *DockerSandbox) Execute(ctx context.Context, language, code string, inpu
 	}
 
 	if result.Stderr != "" && result.ExitCode != 0 {
-		return result.Stdout, fmt.Errorf(result.Stderr)
+		return result.Stdout, fmt.Errorf("%s", result.Stderr)
 	}
 
 	return result.Stdout, nil

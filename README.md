@@ -12,6 +12,7 @@ SuiYu Agent is an open-source AI Agent platform with Agent management, Skill sys
 
 - **Backend**: Go (Hertz) + PostgreSQL (pgvector)
 - **Frontend**: Optional embedded Vue3 Web UI
+- **Desktop**: Optional Tauri desktop client (see `sya-desktop/`)
 
 ### Features
 
@@ -89,4 +90,3 @@ See `.env.example` for full variable list.
 ### License
 
 Apache License 2.0
-

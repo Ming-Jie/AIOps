@@ -80,7 +80,13 @@ func ResolveTemplate(tmpl string, ctx *VariableContext) string {
 			return match
 		}
 
-		varPath := strings.TrimSpace(submatches[1])
+		varPath := strings.TrimPrefix(strings.TrimSpace(submatches[1]), ".")
+		if val, ok := ctx.GetVariable(varPath); ok {
+			if str, ok := val.(string); ok {
+				return str
+			}
+			return fmt.Sprintf("%v", val)
+		}
 		parts := strings.Split(varPath, ".")
 
 		// 获取基础值

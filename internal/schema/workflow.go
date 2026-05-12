@@ -66,6 +66,7 @@ type WorkflowDefinitionPublic struct {
 	Nodes        []WorkflowNode `json:"nodes"`
 	Edges        []WorkflowEdge `json:"edges"`
 	Variables    map[string]any `json:"variables,omitempty"`
+	Config       map[string]any `json:"config,omitempty"`
 	InputSchema  map[string]any `json:"input_schema,omitempty"`
 	OutputSchema map[string]any `json:"output_schema,omitempty"`
 	Version      int            `json:"version"`
@@ -108,6 +109,7 @@ type CreateWorkflowDefinitionRequest struct {
 	Nodes        []WorkflowNode `json:"nodes" validate:"required,min=1"`
 	Edges        []WorkflowEdge `json:"edges"`
 	Variables    map[string]any `json:"variables,omitempty"`
+	Config       map[string]any `json:"config,omitempty"`
 	InputSchema  map[string]any `json:"input_schema,omitempty"`
 	OutputSchema map[string]any `json:"output_schema,omitempty"`
 	IsActive     *bool          `json:"is_active,omitempty"`
@@ -120,13 +122,14 @@ type UpdateWorkflowDefinitionRequest struct {
 	Nodes        []WorkflowNode `json:"nodes,omitempty"`
 	Edges        []WorkflowEdge `json:"edges,omitempty"`
 	Variables    map[string]any `json:"variables,omitempty"`
+	Config       map[string]any `json:"config,omitempty"`
 	InputSchema  map[string]any `json:"input_schema,omitempty"`
 	OutputSchema map[string]any `json:"output_schema,omitempty"`
 	IsActive     *bool          `json:"is_active,omitempty"`
 }
 
 type ExecuteWorkflowRequest struct {
-	WorkflowID int64          `json:"workflow_id" validate:"required"`
+	WorkflowID int64 `json:"workflow_id" validate:"required"`
 	// Message is the runtime user text. If empty after trim, the engine uses the first Start node’s config.user_prompt from the saved workflow.
 	Message   string         `json:"message"`
 	Variables map[string]any `json:"variables,omitempty"`
@@ -139,4 +142,5 @@ type ExecuteWorkflowResponse struct {
 	// NodeResultOrder is the order nodes finished (for UI edge animation).
 	NodeResultOrder []string `json:"node_result_order,omitempty"`
 	DurationMS      int64    `json:"duration_ms"`
+	ExecutionID     int64    `json:"execution_id,omitempty"`
 }

@@ -2,7 +2,7 @@
 name: crypto-tool
 description: Encrypt/decrypt strings with various algorithms
 activation_keywords: [encrypt, decrypt, crypto, aes, rsa, hash, cipher, encode]
-execution_mode: client
+execution_mode: server
 ---
 
 # Crypto Tool

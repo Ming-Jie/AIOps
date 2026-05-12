@@ -2,7 +2,7 @@
 name: smart-contract
 description: Read smart contract state and call view/pure contract methods
 activation_keywords: [smart contract, contract, abi, erc20, erc721, erc1155, token, tokenbalance, allowance, total supply]
-execution_mode: client
+execution_mode: server
 ---
 
 # Smart Contract Skill

@@ -95,6 +95,7 @@ const (
 	NodeTypeCondition = "condition"
 	NodeTypeLLM       = "llm"
 	NodeTypeTool      = "tool"
+	NodeTypeMCP       = "mcp"
 	NodeTypeMerge     = "merge"
 )
 
@@ -555,13 +556,29 @@ func convertToModelResults(results []NodeResult) []model.NodeResult {
 	out := make([]model.NodeResult, 0, len(results))
 	for _, r := range results {
 		out = append(out, model.NodeResult{
-			NodeID: r.NodeID,
-			Label:  r.Label,
-			Output: map[string]any{"data": r.Output},
-			Error:  r.Error,
+			NodeID:     r.NodeID,
+			Label:      r.Label,
+			NodeType:   r.NodeType,
+			Input:      r.Input,
+			Output:     modelNodeOutputMap(r.Output),
+			Error:      r.Error,
+			StartTime:  r.StartTime.Format(time.RFC3339Nano),
+			EndTime:    r.EndTime.Format(time.RFC3339Nano),
+			DurationMs: r.DurationMs,
+			RetryCount: r.RetryCount,
 		})
 	}
 	return out
+}
+
+func modelNodeOutputMap(output any) map[string]any {
+	if output == nil {
+		return nil
+	}
+	if m, ok := output.(map[string]any); ok {
+		return m
+	}
+	return map[string]any{"data": output}
 }
 
 func convertToItems(output any, nodeID string) []Item {
@@ -685,7 +702,22 @@ func (e *GraphEngine) validateInputSchema(node *model.WorkflowNode, execCtx *Exe
 		return nil
 	}
 
-	inputMapping := node.Config["input_mapping"].(map[string]any)
+	inputMapping, _ := node.Config["input_mapping"].(map[string]any)
+	requiredFields := make(map[string]struct{})
+	if rawRequired, ok := node.InputSchema["required"].([]any); ok {
+		for _, item := range rawRequired {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				requiredFields[strings.TrimSpace(s)] = struct{}{}
+			}
+		}
+	}
+	if rawRequired, ok := node.InputSchema["required"].([]string); ok {
+		for _, item := range rawRequired {
+			if strings.TrimSpace(item) != "" {
+				requiredFields[strings.TrimSpace(item)] = struct{}{}
+			}
+		}
+	}
 
 	for field, schema := range props {
 		schemaMap, ok := schema.(map[string]any)
@@ -695,6 +727,9 @@ func (e *GraphEngine) validateInputSchema(node *model.WorkflowNode, execCtx *Exe
 
 		fieldType, _ := schemaMap["type"].(string)
 		required, _ := schemaMap["required"].(bool)
+		if _, ok := requiredFields[field]; ok {
+			required = true
+		}
 
 		hasMapping := false
 		if inputMapping != nil {

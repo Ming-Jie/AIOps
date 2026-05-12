@@ -24,13 +24,13 @@ func initGroupChatHandler(s *ChatService, rt *agent.Runtime) {
 	s.groupChatHandler = agent.NewGroupChatHandler(caller)
 }
 
-// isGroupChatStreamRequest is true when POST /chat/stream should take the group multiplex path (group_id + @mentions).
+// isGroupChatStreamRequest is true when POST /chat/stream should take the group multiplex path.
 func isGroupChatStreamRequest(req *schema.ChatRequest) bool {
-	return req != nil && req.GroupID > 0 && len(req.Mentions) > 0
+	return req != nil && req.GroupID > 0
 }
 
 // GroupChatStream handles POST /chat/groups/stream: no agent_id/workflow_id; requires group_id.
-// Mentions may be empty: user message is recorded; only @mentioned agents are invoked to reply.
+// Mentions may be empty: the turn is treated as group collaboration and all group members are invoked.
 func (s *ChatService) GroupChatStream(ctx context.Context, req *schema.ChatRequest, chatUserID string) (io.ReadCloser, error) {
 	if req == nil {
 		return nil, fmt.Errorf("请求体无效")
@@ -274,9 +274,6 @@ func (s *ChatService) resolveGroupPeerAgentIDs(ctx context.Context, groupID int6
 		seen[id] = struct{}{}
 		out = append(out, id)
 	}
-	for _, id := range mentions {
-		add(id)
-	}
 	if s == nil || groupID < 1 {
 		return out
 	}
@@ -285,14 +282,72 @@ func (s *ChatService) resolveGroupPeerAgentIDs(ctx context.Context, groupID int6
 		logger.Debug("group peer ids: get group failed or nil", "group_id", groupID, "err", err)
 		return out
 	}
+	members := make(map[int64]struct{}, len(g.Members))
+	for _, m := range g.Members {
+		members[m.AgentID] = struct{}{}
+		add(m.AgentID)
+	}
+	for _, id := range mentions {
+		if _, ok := members[id]; ok {
+			add(id)
+		}
+	}
+	return out
+}
+
+func (s *ChatService) resolveGroupInvokeAgentIDs(ctx context.Context, groupID int64, mentions []int64) []int64 {
+	seen := make(map[int64]struct{})
+	var out []int64
+	add := func(id int64) {
+		if id < 1 {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if s == nil || groupID < 1 {
+		return out
+	}
+	g, err := s.GetChatGroup(ctx, groupID)
+	if err != nil || g == nil {
+		logger.Debug("group invoke ids: get group failed or nil", "group_id", groupID, "err", err)
+		return out
+	}
+	members := make(map[int64]struct{}, len(g.Members))
+	for _, m := range g.Members {
+		members[m.AgentID] = struct{}{}
+	}
+	for _, id := range mentions {
+		if _, ok := members[id]; ok {
+			add(id)
+		}
+	}
+	if len(mentions) > 0 {
+		return out
+	}
 	for _, m := range g.Members {
 		add(m.AgentID)
 	}
 	return out
 }
 
-// handleGroupChatStream handles group chat: only @mentioned agents are invoked; empty mentions yields user-only turn.
-// It calls each mentioned agent in parallel and multiplexes their SSE streams.
+func groupCollaborationMessage(message string, count int) string {
+	if count <= 1 {
+		return message
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "(用户发送了附件或图片，请结合可见上下文处理。)"
+	}
+	return fmt.Sprintf("【群聊协作模式】用户没有 @ 指定某个智能体，系统已邀请群内 %d 个智能体并行协作。\n请根据你的角色、技能和工具只补充你最擅长且对用户有价值的内容；避免重复通用结论。若你没有实质补充，请简短说明“无补充”。\n\n用户消息：\n%s", count, message)
+}
+
+// handleGroupChatStream handles group chat. Explicit @mentions invoke those agents; when the
+// user addresses the group without mentions, all group members are invoked in collaboration mode.
+// Invoked agents run in parallel and their SSE streams are multiplexed with agent_id.
 func (s *ChatService) handleGroupChatStream(ctx context.Context, req *schema.ChatRequest, chatUserID string) (io.ReadCloser, error) {
 	if s.groupChatHandler == nil {
 		return nil, fmt.Errorf("group chat handler not initialized")
@@ -318,6 +373,11 @@ func (s *ChatService) handleGroupChatStream(ctx context.Context, req *schema.Cha
 	}
 
 	peerAgentIDs := s.resolveGroupPeerAgentIDs(ctx, req.GroupID, req.Mentions)
+	invokeAgentIDs := s.resolveGroupInvokeAgentIDs(ctx, req.GroupID, req.Mentions)
+	invokeMessage := req.Message
+	if len(req.Mentions) == 0 {
+		invokeMessage = groupCollaborationMessage(req.Message, len(invokeAgentIDs))
+	}
 
 	// Pipe + mutex first so builtin_group_send_message can emit peer/outbound frames to the same writer.
 	reader, writer := io.Pipe()
@@ -336,7 +396,7 @@ func (s *ChatService) handleGroupChatStream(ctx context.Context, req *schema.Cha
 		_, _ = fmt.Fprintf(writer, "data: %s\n\n", b)
 	})
 
-	streams, err := s.groupChatHandler.HandleGroupMessage(ctx, req.GroupID, req.Mentions, peerAgentIDs, req.Message, sessionID)
+	streams, err := s.groupChatHandler.HandleGroupMessage(ctx, req.GroupID, invokeAgentIDs, peerAgentIDs, invokeMessage, sessionID)
 	if err != nil {
 		_ = writer.CloseWithError(err)
 		return nil, fmt.Errorf("group chat handling failed: %w", err)

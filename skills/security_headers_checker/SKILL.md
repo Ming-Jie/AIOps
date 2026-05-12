@@ -2,7 +2,7 @@
 name: security-headers-checker
 description: Check HTTP security headers response
 activation_keywords: [security, header, http, security header, cors, csrf, hsts]
-execution_mode: client
+execution_mode: server
 ---
 
 # Security Headers Checker

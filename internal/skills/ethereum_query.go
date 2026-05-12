@@ -260,7 +260,7 @@ func NewBuiltinEthereumQueryTool() tool.BaseTool {
 		&einoschema.ToolInfo{
 			Name:  toolEthereumQuery,
 			Desc:  "Query Ethereum blockchain data: blocks, transactions, balances, gas prices, and network info",
-			Extra: map[string]any{"execution_mode": "client"},
+			Extra: map[string]any{"execution_mode": "server"},
 			ParamsOneOf: einoschema.NewParamsOneOfByParams(map[string]*einoschema.ParameterInfo{
 				"operation":    {Type: einoschema.String, Desc: "Operation: block_number, block, balance, transaction, gas_price, nonce, chain_id", Required: true},
 				"block_number": {Type: einoschema.String, Desc: "Block number for block query", Required: false},

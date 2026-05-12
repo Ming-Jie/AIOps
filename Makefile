@@ -7,6 +7,7 @@ help:
 	@echo "  make dev              - 启动后端开发服务器"
 	@echo "  make build            - 编译后端"
 	@echo "  make build-ui         - 构建前端"
+	@echo "  make build-desktop   - 构建桌面客户端"
 	@echo "  make run              - 运行编译后的后端"
 	@echo "  make test             - 运行测试"
 	@echo "  make lint             - 代码检查"
@@ -24,15 +25,19 @@ dev:
 build: build-ui
 	@echo "编译后端..."
 	@mkdir -p build
-	go build -o build/suiyu-agent ./cmd/server
+	go build -o build/sya ./cmd/server
 
 build-ui:
 	@echo "构建前端..."
 	cd ui && npm run build
 
+build-desktop:
+	@echo "构建桌面客户端..."
+	cd taskmate-desktop && npm run tauri build
+
 run:
 	@echo "运行后端..."
-	./build/suiyu-agent
+	./build/sya
 
 test:
 	@echo "运行测试..."
@@ -50,7 +55,8 @@ clean:
 	@echo "清理构建产物..."
 	rm -rf build/
 	rm -rf ui/dist/
-	rm -f suiyu-agent
+	rm -rf taskmate-desktop/src-tauri/target/
+	rm -f sya
 
 docker-build:
 	@echo "构建 Docker 镜像..."

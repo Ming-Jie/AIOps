@@ -2,10 +2,13 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fisk086/sya/internal/schema"
 )
 
 func init() {
@@ -279,6 +282,39 @@ func init() {
 	})
 
 	RegisterTask(&TaskDefinition{
+		Type:        TaskTypeMCP,
+		Name:        "MCP Tool",
+		Description: "Call a synced MCP server tool",
+		Icon:        "hub",
+		Color:       "#00a67d",
+		Category:    "action",
+		Execute:     executeMCP,
+		ConfigSchema: map[string]TaskField{
+			"mcp_config_id": {
+				Key:         "mcp_config_id",
+				Label:       "MCP Config",
+				Type:        "select",
+				Required:    true,
+				Description: "MCP server configuration",
+			},
+			"tool_name": {
+				Key:         "tool_name",
+				Label:       "Tool Name",
+				Type:        "select",
+				Required:    true,
+				Description: "Synced MCP tool name. Leave empty to list all tools as output for downstream nodes.",
+			},
+			"arguments": {
+				Key:         "arguments",
+				Label:       "Arguments JSON",
+				Type:        "textarea",
+				Required:    false,
+				Description: "JSON object; string values support {{variable}}",
+			},
+		},
+	})
+
+	RegisterTask(&TaskDefinition{
 		Type:        TaskTypeHTTP,
 		Name:        "HTTP Request",
 		Description: "Make HTTP requests",
@@ -484,6 +520,9 @@ func executeStart(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 
 func executeEnd(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 	output := input.Variables["last_output"]
+	if mapping, _ := input.Config["output_mapping"].(string); strings.TrimSpace(mapping) != "" {
+		output = resolveTemplate(mapping, input)
+	}
 	if output == nil {
 		output = input.UserMessage
 	}
@@ -562,57 +601,114 @@ func executeLLM(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 
 func executeTool(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 	toolName, ok := input.Config["tool_name"]
-	if !ok {
+	if !ok || toolName == nil {
+		return &TaskOutput{Error: "tool_name not configured"}, nil
+	}
+	name, ok := toolName.(string)
+	if !ok || name == "" {
 		return &TaskOutput{Error: "tool_name not configured"}, nil
 	}
 
-	toolInput := buildInputMessage(input)
-	if ti, ok := input.Config["tool_input"].(string); ok && ti != "" {
-		toolInput = resolveTemplate(ti, input)
-	}
-
-	if toolRegistry == nil {
-		return &TaskOutput{
-			Data: map[string]any{
-				"type":   "tool",
-				"tool":   toolName,
-				"input":  toolInput,
-				"result": "tool registry not initialized",
-			},
-		}, nil
-	}
-
-	tool, ok := toolRegistry[toolName.(string)]
-	if !ok {
-		return &TaskOutput{
-			Data: map[string]any{
-				"type":   "tool",
-				"tool":   toolName,
-				"input":  toolInput,
-				"result": fmt.Sprintf("tool not found: %v", toolName),
-			},
-		}, nil
-	}
-
-	result, err := tool(ctx, toolInput)
-	if err != nil {
-		return &TaskOutput{
-			Data: map[string]any{
-				"type":   "tool",
-				"tool":   toolName,
-				"input":  toolInput,
-				"result": result,
-				"error":  err.Error(),
-			},
-		}, nil
+	// Tool node as provider: expose tool metadata to downstream nodes
+	// Downstream LLM nodes reference {{.node_id.tools}} to decide which to call
+	var toolMeta map[string]any
+	if fn, ok := toolRegistry[name]; ok {
+		toolMeta = map[string]any{
+			"tool_name":  name,
+			"registered": true,
+			"note":       "execute this tool via Tool Call node or reference in LLM prompt",
+		}
+		_ = fn // prevent unused warning
+	} else {
+		toolMeta = map[string]any{
+			"tool_name":  name,
+			"registered": false,
+			"note":       "tool not found in registry; Tool Call node will handle",
+		}
 	}
 
 	return &TaskOutput{
 		Data: map[string]any{
 			"type":   "tool",
-			"tool":   toolName,
-			"input":  toolInput,
-			"result": result,
+			"mode":   "provider",
+			"tool":   name,
+			"tool_meta": toolMeta,
+			"note":  "tool node exposes tool to workflow; execute via downstream Tool Call node",
+		},
+	}, nil
+}
+
+func executeMCP(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
+	configID, ok := configInt64(input.Config, "mcp_config_id", "mcpConfigId")
+	if !ok || configID < 1 {
+		return &TaskOutput{Error: "mcp_config_id not configured"}, nil
+	}
+	toolName := configString(input.Config, "tool_name", "toolName")
+
+	// Auto mode: no specific tool selected
+	if toolName == "" {
+		return executeMCPAuto(ctx, input, configID)
+	}
+
+	// Manual mode: MCP tool as provider — expose tool metadata to downstream
+	toolMeta := map[string]any{
+		"tool_name":     toolName,
+		"mcp_config_id": configID,
+		"display_name":  toolName,
+		"mode":          "manual",
+	}
+
+	return &TaskOutput{
+		Data: map[string]any{
+			"type":      "mcp",
+			"mode":      "provider",
+			"tool_name": toolName,
+			"tool_meta": toolMeta,
+			"note":      "MCP tool node exposes tool to workflow; execute via downstream Tool Call node",
+		},
+	}, nil
+}
+
+func executeMCPAuto(ctx context.Context, input *TaskInput, configID int64) (*TaskOutput, error) {
+	if agentRuntime == nil {
+		return &TaskOutput{Error: "agent runtime not initialized"}, nil
+	}
+	tools, err := agentRuntime.ListMCPToolsByConfig(configID)
+	if err != nil {
+		return &TaskOutput{Error: err.Error()}, nil
+	}
+
+	var activeTools []schema.MCPServer
+	for _, t := range tools {
+		if t.IsActive && t.ToolName != "" {
+			activeTools = append(activeTools, t)
+		}
+	}
+
+	if len(activeTools) == 0 {
+		return &TaskOutput{Error: "no active tools available for this MCP config"}, nil
+	}
+
+	// 列出所有可用 tools，下游 LLM 节点通过 input_mapping 引用后决定调用哪个
+	var toolSummaries []map[string]any
+	for _, t := range activeTools {
+		toolSummaries = append(toolSummaries, map[string]any{
+			"tool_name":    t.ToolName,
+			"display_name": t.DisplayName,
+			"description":  t.Description,
+			"input_schema": t.InputSchema,
+		})
+	}
+
+	return &TaskOutput{
+		Data: map[string]any{
+			"type":           "mcp",
+			"mcp_config_id":  configID,
+			"tool_name":      "__auto__",
+			"tools":          toolSummaries,
+			"tool_count":     len(toolSummaries),
+			"mode":           "auto",
+			"note":           "tools listed for downstream LLM; specify tool_name in next node to call, or configure MCP Call node to handle",
 		},
 	}, nil
 }
@@ -837,6 +933,96 @@ func executeMerge(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 	}, nil
 }
 
+func configString(config map[string]any, keys ...string) string {
+	for _, key := range keys {
+		v, ok := config[key]
+		if !ok || v == nil {
+			continue
+		}
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(s)
+		}
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+	return ""
+}
+
+func configInt64(config map[string]any, keys ...string) (int64, bool) {
+	for _, key := range keys {
+		v, ok := config[key]
+		if !ok || v == nil {
+			continue
+		}
+		switch x := v.(type) {
+		case int64:
+			return x, true
+		case int:
+			return int64(x), true
+		case int32:
+			return int64(x), true
+		case float64:
+			return int64(x), x >= 1
+		case float32:
+			return int64(x), x >= 1
+		case string:
+			id, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+			return id, err == nil && id >= 1
+		}
+	}
+	return 0, false
+}
+
+func mcpArgumentsFromConfig(input *TaskInput) (map[string]any, error) {
+	raw, ok := input.Config["arguments"]
+	if !ok || raw == nil {
+		raw = input.Config["tool_input"]
+	}
+	if raw == nil {
+		return map[string]any{}, nil
+	}
+	switch v := raw.(type) {
+	case map[string]any:
+		return resolveTemplateMap(v, input), nil
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" {
+			return map[string]any{}, nil
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+			return nil, fmt.Errorf("arguments must be a JSON object: %w", err)
+		}
+		return resolveTemplateMap(parsed, input), nil
+	default:
+		return nil, fmt.Errorf("arguments must be a JSON object")
+	}
+}
+
+func resolveTemplateMap(in map[string]any, input *TaskInput) map[string]any {
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = resolveTemplateAny(value, input)
+	}
+	return out
+}
+
+func resolveTemplateAny(value any, input *TaskInput) any {
+	switch v := value.(type) {
+	case string:
+		return resolveTemplate(v, input)
+	case map[string]any:
+		return resolveTemplateMap(v, input)
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = resolveTemplateAny(item, input)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
 func buildInputMessage(input *TaskInput) string {
 	msg := input.UserMessage
 	if len(input.NodeOutputs) > 0 {
@@ -850,6 +1036,9 @@ func buildInputMessage(input *TaskInput) string {
 }
 
 func resolveTemplate(tmpl string, input *TaskInput) string {
+	if input != nil && input.VarContext != nil {
+		return ResolveTemplate(tmpl, input.VarContext)
+	}
 	return resolveTemplateValue(tmpl, input.Variables, input.NodeOutputs)
 }
 

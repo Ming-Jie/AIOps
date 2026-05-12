@@ -12,5 +12,5 @@ export const defaultConfig = {
   method: 'GET',
   headers: {},
   body: '',
-  assertions: ''
+  assertions: {}
 }

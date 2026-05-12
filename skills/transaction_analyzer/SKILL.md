@@ -2,7 +2,7 @@
 name: transaction-analyzer
 description: Analyze Ethereum transactions including details, status, gas usage, and internal transfers
 activation_keywords: [transaction, tx, txhash, transaction hash, receipt, status, gas used, internal transaction, token transfer]
-execution_mode: client
+execution_mode: server
 ---
 
 # Transaction Analyzer Skill

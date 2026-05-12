@@ -13,14 +13,11 @@ const builtinNodes: WorkflowNodeType[] = [
   { value: 'llm', label: 'LLM', icon: 'psychology', color: '#9c27b0', desc: 'Direct LLM call', category: 'ai' },
   { value: 'knowledge', label: 'Knowledge', icon: 'menu_book', color: '#8bc34a', desc: 'Retrieve from knowledge base', category: 'ai' },
   { value: 'tool', label: 'Tool', icon: 'build', color: '#ff9800', desc: 'Execute a tool/skill', category: 'action' },
+  { value: 'mcp', label: 'MCP Tool', icon: 'hub', color: '#00a67d', desc: 'Call an MCP server tool', category: 'action' },
   { value: 'http', label: 'HTTP Request', icon: 'http', color: '#00bcd4', desc: 'Make HTTP requests', category: 'action' },
   { value: 'code', label: 'Code', icon: 'code', color: '#607d8b', desc: 'Execute Python/JS code', category: 'action' },
   { value: 'template', label: 'Template', icon: 'description', color: '#795548', desc: 'Transform data with template', category: 'data' },
-  { value: 'variable', label: 'Variable', icon: 'data_object', color: '#ffc107', desc: 'Set or update variables', category: 'data' },
-  { value: 'ssh', label: 'SSH Execute', icon: 'terminal', color: '#4caf50', desc: 'Remote command execution', category: 'ops' },
-  { value: 'notify', label: 'Notification', icon: 'notifications', color: '#ff9800', desc: 'Send notification', category: 'notify' },
-  { value: 'apitest', label: 'API Test', icon: 'science', color: '#2196f3', desc: 'Execute API test', category: 'test' },
-  { value: 'datamask', label: 'Data Mask', icon: 'visibility_off', color: '#9c27b0', desc: 'Sensitive data masking', category: 'data' }
+  { value: 'variable', label: 'Variable', icon: 'data_object', color: '#ffc107', desc: 'Set or update variables', category: 'data' }
 ]
 
 const nodeRegistry = new Map<string, WorkflowNodeType>()

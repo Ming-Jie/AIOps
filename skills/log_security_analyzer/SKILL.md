@@ -2,7 +2,7 @@
 name: log-security-analyzer
 description: Analyze logs for security events and threats
 activation_keywords: [security, log, attack, intrusion, brute force, failed login, threat, audit]
-execution_mode: client
+execution_mode: server
 ---
 
 # Log Security Analyzer

@@ -283,7 +283,7 @@ func NewBuiltinSmartContractTool() tool.BaseTool {
 		&einoschema.ToolInfo{
 			Name:  toolSmartContract,
 			Desc:  "Read smart contract state: ERC20/ERC721 info, balances, allowances, contract code, and storage",
-			Extra: map[string]any{"execution_mode": "client"},
+			Extra: map[string]any{"execution_mode": "server"},
 			ParamsOneOf: einoschema.NewParamsOneOfByParams(map[string]*einoschema.ParameterInfo{
 				"operation":        {Type: einoschema.String, Desc: "Operation: erc20_info, erc20_balance, erc20_allowance, erc721_owner, erc721_metadata, code, storage", Required: true},
 				"contract_address": {Type: einoschema.String, Desc: "Ethereum contract address", Required: true},

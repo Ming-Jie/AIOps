@@ -1,10 +1,35 @@
 <template>
-  <div class="workflow-node" :class="{ selected: selected, [`type-${data.nodeType}`]: true }">
+  <div
+    class="workflow-node"
+    :class="{
+      selected: selected,
+      [`type-${data.nodeType}`]: true,
+      [`run-${data.runStatus}`]: Boolean(data.runStatus)
+    }"
+  >
     <div class="node-header">
       <div class="node-icon" :style="{ backgroundColor: headerColor }">
         <q-icon :name="nodeIcon" size="14px" color="white" />
       </div>
       <div class="node-title">{{ data.label || '未命名节点' }}</div>
+      <q-icon
+        v-if="data.runStatus === 'success'"
+        name="check_circle"
+        color="positive"
+        size="16px"
+        class="node-run-icon"
+      >
+        <q-tooltip>{{ data.runDurationMs ?? 0 }}ms</q-tooltip>
+      </q-icon>
+      <q-icon
+        v-else-if="data.runStatus === 'error'"
+        name="error_outline"
+        color="negative"
+        size="16px"
+        class="node-run-icon"
+      >
+        <q-tooltip>{{ data.runError || 'Error' }}</q-tooltip>
+      </q-icon>
       <q-btn v-if="data.nodeType !== 'input' && data.nodeType !== 'output'" flat dense round size="sm" icon="more_vert" class="node-menu">
         <q-menu>
           <q-list dense style="min-width: 100px">
@@ -23,6 +48,12 @@
       <div v-if="data.nodeType === 'agent' && data.agentId" class="node-badge agent-badge">
         <q-icon name="smart_toy" size="12px" />
         <span>智能体 #{{ data.agentId }}</span>
+      </div>
+
+      <div v-if="data.runStatus" class="node-run-meta" :class="`node-run-meta--${data.runStatus}`">
+        <q-icon :name="data.runStatus === 'success' ? 'timer' : 'error_outline'" size="12px" />
+        <span v-if="data.runStatus === 'success'">{{ data.runDurationMs ?? 0 }}ms</span>
+        <span v-else>{{ data.runError || 'Error' }}</span>
       </div>
 
       <div v-if="data.nodeType === 'llm'" class="node-badge llm-badge">
@@ -46,8 +77,8 @@
 
       <template v-if="hasToolName">
         <div class="node-tool">
-          <q-icon name="build" size="12px" class="q-mr-xs" />
-          {{ config.tool_name }}
+          <q-icon :name="data.nodeType === 'mcp' ? 'hub' : 'build'" size="12px" class="q-mr-xs" />
+          {{ toolPreview }}
         </div>
       </template>
 
@@ -90,12 +121,12 @@ defineEmits(['dblclick', 'delete'])
 const {
   headerColor,
   nodeIcon,
-  config,
   hasPrompt,
   promptPreview,
   hasCondition,
   conditionText,
   hasToolName,
+  toolPreview,
   hasInputSchema,
   inputSchemaFieldCount,
   hasOutputSchema,
@@ -122,6 +153,14 @@ const {
 .workflow-node.selected {
   box-shadow: 0 0 0 2px #1890ff, 0 4px 16px rgba(24,144,255,0.25);
   border-color: #1890ff;
+}
+
+.workflow-node.run-success {
+  border-color: #21ba45;
+}
+
+.workflow-node.run-error {
+  border-color: #c10015;
 }
 
 .node-header {
@@ -153,6 +192,11 @@ const {
   text-overflow: ellipsis;
 }
 
+.node-run-icon {
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
 .node-menu {
   opacity: 0;
   transition: opacity 0.2s;
@@ -174,6 +218,30 @@ const {
   border-radius: 4px;
   font-size: 11px;
   margin-bottom: 6px;
+}
+
+.node-run-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-bottom: 6px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-run-meta--success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.node-run-meta--error {
+  background: #ffebee;
+  color: #c10015;
 }
 
 .agent-badge {

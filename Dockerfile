@@ -18,17 +18,17 @@ RUN go mod download
 COPY . .
 RUN rm -rf internal/webui/dist && mkdir -p internal/webui/dist
 COPY --from=ui /src/ui/dist/spa/ ./internal/webui/dist/
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/suiyu-agent ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/taskmate ./cmd/server
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata nodejs npm python3 py3-pip docker-cli && \
     pip3 install uv --break-system-packages
 WORKDIR /app
 RUN mkdir -p /app/data/uploads
-COPY --from=gobuild /out/suiyu-agent .
+COPY --from=gobuild /out/taskmate .
 COPY skills ./skills
 ENV SERVER_PORT=8080
 ENV SKILLS_DIR=/app/skills
 ENV UPLOAD_DIR=/app/data/uploads
 EXPOSE 8080
-ENTRYPOINT ["/app/suiyu-agent"]
+ENTRYPOINT ["/app/taskmate"]

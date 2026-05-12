@@ -436,8 +436,8 @@ async function doApprove () {
     await api.post(`/approvals/${targetRow.value.id}/approve`, null, { params: { comment: approveComment.value } })
     approveOpen.value = false
     void load()
-  } catch (e) {
-    console.error(e)
+  } catch {
+    // Keep the dialog open so the user can retry or cancel.
   }
 }
 
@@ -446,8 +446,8 @@ async function doReject () {
     await api.post(`/approvals/${targetRow.value.id}/reject`, null, { params: { comment: rejectComment.value } })
     rejectOpen.value = false
     void load()
-  } catch (e) {
-    console.error(e)
+  } catch {
+    // Keep the dialog open so the user can retry or cancel.
   }
 }
 

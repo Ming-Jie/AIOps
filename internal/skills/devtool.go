@@ -428,7 +428,7 @@ func NewBuiltinDevtoolTool() tool.BaseTool {
 		&einoschema.ToolInfo{
 			Name:  toolDevtool,
 			Desc:  "Development utilities: datetime, hash, uuid, encoding/decoding, password, regex, aes",
-			Extra: map[string]any{"execution_mode": "client"},
+			Extra: map[string]any{"execution_mode": "server"},
 			ParamsOneOf: einoschema.NewParamsOneOfByParams(map[string]*einoschema.ParameterInfo{
 				"operation":     {Type: einoschema.String, Desc: "Operation: datetime, hash, uuid, encode, decode, password, regex, aes", Required: true},
 				"input":         {Type: einoschema.String, Desc: "Input string", Required: false},

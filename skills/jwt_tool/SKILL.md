@@ -2,7 +2,7 @@
 name: jwt-tool
 description: Parse, decode, and verify JWT tokens
 activation_keywords: [jwt, token, decode, verify, parse, oauth, bearer]
-execution_mode: client
+execution_mode: server
 ---
 
 # JWT Tool

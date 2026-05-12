@@ -15,8 +15,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/chathistory"
 	"github.com/fisk086/sya/internal/chatfile"
+	"github.com/fisk086/sya/internal/chathistory"
 	"github.com/fisk086/sya/internal/embedding"
 	"github.com/fisk086/sya/internal/logger"
 	"github.com/fisk086/sya/internal/memory"
@@ -493,15 +493,14 @@ func (s *ChatService) ChatStream(ctx context.Context, req *schema.ChatRequest, c
 	if req.WorkflowID > 0 {
 		return nil, fmt.Errorf("workflow chat does not support POST /chat/stream yet; use POST /chat")
 	}
+	if isGroupChatStreamRequest(req) {
+		return s.GroupChatStream(ctx, req, chatUserID)
+	}
 	if err := validateChatTarget(req); err != nil {
 		return nil, err
 	}
 	if err := validateChatContent(req); err != nil {
 		return nil, err
-	}
-
-	if isGroupChatStreamRequest(req) {
-		return s.handleGroupChatStream(ctx, req, chatUserID)
 	}
 
 	streamEnabled := s.isStreamEnabled(ctx, req.AgentID)

@@ -173,8 +173,7 @@ async function loadUsage () {
       params: { period: period.value }
     })
     stats.value = data.data?.stats || []
-  } catch (e) {
-    console.error('Failed to load usage:', e)
+  } catch {
     stats.value = []
   } finally {
     loading.value = false

@@ -10,10 +10,15 @@ execution_mode: server
 Use when the user pastes **EXPLAIN** output or asks how to read a **query plan**.
 
 - **MySQL live analysis**: Prefer the **MySQL Explain** skill (`builtin_mysql_explain` / `mysql_explain`) when you need to run `EXPLAIN` / `EXPLAIN ANALYZE` against a DSN.
-- **Any engine (text)**: Parse pasted plans (MySQL traditional/JSON/TREE, PostgreSQL `EXPLAIN`, etc.) and explain:
+- **Any engine (text)**: Use `builtin_sql_explain` to parse pasted plans (MySQL traditional/JSON/TREE, PostgreSQL `EXPLAIN`, etc.) and explain:
   - Access type (seq scan vs index, join order hints)
   - Whether indexes are used as intended
   - “Using filesort”, “Using temporary”, buffer usage (when present)
   - Practical next steps (indexes to add/change, query rewrite)
+
+Tool fields:
+- `plan`: Pasted EXPLAIN / EXPLAIN ANALYZE / query plan text.
+- `engine`: Optional engine hint: `mysql`, `postgres`, or `generic`.
+- `query`: Optional original SQL query for additional hints.
 
 If the plan is truncated, ask only for the missing fragment.

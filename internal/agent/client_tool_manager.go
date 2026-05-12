@@ -220,7 +220,8 @@ func GetToolExecutionMode(toolName string) string {
 		"builtin_skill.cert_checker", "builtin_skill.nginx_diagnose", "builtin_skill.dns_lookup",
 		"builtin_skill.datetime", "builtin_skill.regex", "builtin_skill.json_parser",
 		"builtin_skill.csv_analyzer", "builtin_skill.log_analyzer", "builtin_skill.image_analyzer",
-		"builtin_skill.terraform_plan", "builtin_skill.redis_tool", "builtin_skill.browser_client":
+		"builtin_skill.terraform_plan", "builtin_skill.redis_tool", "builtin_skill.browser_client",
+		"builtin_skill.cisco", "builtin_skill.cisco_ios":
 		return schema.ExecutionModeClient
 	default:
 		return schema.ExecutionModeServer

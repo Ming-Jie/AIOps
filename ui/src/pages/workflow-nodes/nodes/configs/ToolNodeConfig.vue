@@ -6,18 +6,37 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfToolName') }}</div>
-      <q-input :model-value="strField('tool_name')" outlined dense class="config-input" @update:model-value="patchConfig('tool_name', $event)" />
+      <q-select
+        :model-value="strField('tool_name')"
+        :options="toolOptions"
+        :loading="loadingTools"
+        outlined
+        dense
+        emit-value
+        map-options
+        clearable
+        use-input
+        hide-selected
+        fill-input
+        input-debounce="0"
+        :placeholder="t('wfToolNamePh')"
+        class="config-input"
+        @filter="filterTools"
+        @update:model-value="patchConfig('tool_name', $event || '')"
+        @new-value="createToolValue"
+      />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfToolInput') }}</div>
-      <q-input :model-value="strField('tool_input')" outlined dense type="textarea" rows="3" class="config-input" @update:model-value="patchConfig('tool_input', $event)" />
+      <q-input :model-value="strField('tool_input')" outlined dense type="textarea" rows="5" :placeholder="t('wfToolInputPh')" class="config-input" @update:model-value="patchConfig('tool_input', $event)" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToolNodeNameOptions, type ToolNameOption } from './useToolNodeConfig'
 
 const props = defineProps<{
   nodeLabel: string
@@ -27,6 +46,8 @@ const props = defineProps<{
 const emit = defineEmits(['update:label', 'update:config'])
 
 const { t } = useI18n()
+const { loading: loadingTools, toolOptions: allToolOptions } = useToolNodeNameOptions()
+const toolOptions = ref<ToolNameOption[]>([])
 
 function patchConfig (key: string, value: unknown) {
   emit('update:config', { ...props.config, [key]: value })
@@ -35,6 +56,23 @@ function patchConfig (key: string, value: unknown) {
 function strField (key: string): string {
   const v = props.config[key]
   return v == null ? '' : String(v)
+}
+
+function filterTools (val: string, update: (fn: () => void) => void) {
+  update(() => {
+    const needle = val.toLowerCase()
+    toolOptions.value = allToolOptions.value.filter(opt =>
+      opt.label.toLowerCase().includes(needle) ||
+      opt.value.toLowerCase().includes(needle)
+    )
+  })
+}
+
+function createToolValue (val: string, done: (value: string, mode?: 'add' | 'add-unique' | 'toggle') => void) {
+  const v = val.trim()
+  if (!v) return
+  done(v, 'add-unique')
+  patchConfig('tool_name', v)
 }
 
 const nodeLabel = computed({

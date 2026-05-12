@@ -6,7 +6,16 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfVariableAssignments') }}</div>
-      <q-input :model-value="strField('assignments')" outlined dense type="textarea" rows="3" class="config-input" @update:model-value="patchConfig('assignments', $event)" />
+      <q-input
+        :model-value="jsonField('assignments')"
+        outlined
+        dense
+        type="textarea"
+        rows="6"
+        :placeholder="t('wfVariableAssignmentsPh')"
+        class="config-input"
+        @update:model-value="patchJSON('assignments', $event)"
+      />
     </div>
   </div>
 </template>
@@ -28,9 +37,29 @@ function patchConfig (key: string, value: unknown) {
   emit('update:config', { ...props.config, [key]: value })
 }
 
-function strField (key: string): string {
+function jsonField (key: string): string {
   const v = props.config[key]
-  return v == null ? '' : String(v)
+  if (v == null || v === '') return '{}'
+  if (typeof v === 'string') return v
+  try {
+    return JSON.stringify(v, null, 2)
+  } catch {
+    return String(v)
+  }
+}
+
+function patchJSON (key: string, value: unknown) {
+  const raw = value == null ? '' : String(value).trim()
+  if (!raw) {
+    patchConfig(key, {})
+    return
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    patchConfig(key, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {})
+  } catch {
+    patchConfig(key, raw)
+  }
 }
 
 const nodeLabel = computed({

@@ -75,6 +75,7 @@ type ChatImagePart struct {
 // For multiple images, send image_parts (each with base64 + mime); legacy single image uses image_base64 + image_mime.
 // For file uploads, provide image_url or file_urls (uploaded via POST /chat/upload).
 // GroupID is for group chat; when set, Mentions specifies which agents should respond (via @).
+// If Mentions is empty, group streaming treats the turn as collaboration and invokes group members.
 type ChatRequest struct {
 	AgentID    int64  `json:"agent_id"`
 	WorkflowID int64  `json:"workflow_id,omitempty"`
@@ -96,7 +97,8 @@ type ChatRequest struct {
 }
 
 // GroupChatStreamRequest is the body for POST /chat/groups/stream (SSE).
-// Use this for multi-agent group chat instead of POST /chat/stream (which requires agent_id or workflow_id).
+// Use this for multi-agent group chat instead of POST /chat/stream.
+// Empty Mentions means the message is addressed to the whole group.
 type GroupChatStreamRequest struct {
 	GroupID     int64           `json:"group_id" validate:"required,min=1"`
 	Message     string          `json:"message"`

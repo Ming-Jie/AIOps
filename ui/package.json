@@ -1,7 +1,7 @@
 {
-  "name": "sya-agnet",
+  "name": "ai-taskmeta-ui",
   "version": "0.0.1",
-  "description": "SuiYu Agent for web UI",
+  "description": "AI TaskMeta web UI",
   "productName": "SuiYu Agent",
   "author": "aiops",
   "private": true,

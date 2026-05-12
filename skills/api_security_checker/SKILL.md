@@ -2,7 +2,7 @@
 name: api-security-checker
 description: Check API for common security vulnerabilities
 activation_keywords: [security, sql injection, xss, vulnerability, injection, sanitize, api security]
-execution_mode: client
+execution_mode: server
 ---
 
 # API Security Checker

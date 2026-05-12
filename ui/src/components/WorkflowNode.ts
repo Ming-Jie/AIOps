@@ -7,6 +7,9 @@ export interface WorkflowNodeData {
   config?: Record<string, unknown>
   inputSchema?: Record<string, unknown>
   outputSchema?: Record<string, unknown>
+  runStatus?: 'success' | 'error'
+  runDurationMs?: number
+  runError?: string
 }
 
 export function useWorkflowNode (data: WorkflowNodeData, _selected: boolean) {
@@ -19,7 +22,8 @@ export function useWorkflowNode (data: WorkflowNodeData, _selected: boolean) {
       condition: '#FA8C16',
       merge: '#607D8B',
       llm: '#EB2F96',
-      tool: '#8C8C8C'
+      tool: '#8C8C8C',
+      mcp: '#00a67d'
     }
     return colors[type] || '#999'
   })
@@ -33,7 +37,8 @@ export function useWorkflowNode (data: WorkflowNodeData, _selected: boolean) {
       condition: 'call_split',
       merge: 'merge_type',
       llm: 'psychology',
-      tool: 'build'
+      tool: 'build',
+      mcp: 'hub'
     }
     return icons[type] || 'circle'
   })
@@ -70,6 +75,15 @@ export function useWorkflowNode (data: WorkflowNodeData, _selected: boolean) {
     return typeof val === 'string' && val.length > 0
   })
 
+  const toolPreview = computed(() => {
+    const val = config.value.tool_name
+    if (typeof val !== 'string' || val.length === 0) return ''
+    if (data.nodeType !== 'mcp') return val
+    const configID = config.value.mcp_config_id
+    if (configID == null || configID === '' || configID === 0) return val
+    return `MCP #${configID} · ${val}`
+  })
+
   const hasInputSchema = computed(() => {
     const s = data.inputSchema
     return s && typeof s === 'object' && 'properties' in s
@@ -103,6 +117,7 @@ export function useWorkflowNode (data: WorkflowNodeData, _selected: boolean) {
     hasCondition,
     conditionText,
     hasToolName,
+    toolPreview,
     hasInputSchema,
     inputSchemaFieldCount,
     hasOutputSchema,

@@ -11,6 +11,7 @@ type WorkflowDefinition struct {
 	Nodes        []WorkflowNode `json:"nodes"`
 	Edges        []WorkflowEdge `json:"edges"`
 	Variables    map[string]any `json:"variables,omitempty"`
+	Config       map[string]any `json:"config,omitempty"`
 	InputSchema  map[string]any `json:"input_schema,omitempty"`
 	OutputSchema map[string]any `json:"output_schema,omitempty"`
 	Version      int            `json:"version"`

@@ -2,7 +2,7 @@
 name: ethereum-query
 description: Query Ethereum blockchain data including blocks, transactions, addresses, and gas prices
 activation_keywords: [ethereum, eth, block, blockheight, blocknumber, address, balance, gas, gasprice, nonce, chainid]
-execution_mode: client
+execution_mode: server
 ---
 
 # Ethereum Query Skill

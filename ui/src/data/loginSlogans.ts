@@ -1,5 +1,3 @@
-/** 登录页随机标语（与 hashcheckweb 同源，按语言分池） */
-
 export const LOGIN_SLOGANS_ZH = [
   '成功不是终点，奋斗才是永恒的动力。',
   '每一个不曾起舞的日子，都是对生命的辜负。',

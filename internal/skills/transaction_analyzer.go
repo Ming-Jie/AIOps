@@ -224,7 +224,7 @@ func NewBuiltinTransactionAnalyzerTool() tool.BaseTool {
 		&einoschema.ToolInfo{
 			Name:  toolTransactionAnalyzer,
 			Desc:  "Analyze Ethereum transactions: details, receipts, gas usage, costs, and token transfers",
-			Extra: map[string]any{"execution_mode": "client"},
+			Extra: map[string]any{"execution_mode": "server"},
 			ParamsOneOf: einoschema.NewParamsOneOfByParams(map[string]*einoschema.ParameterInfo{
 				"operation": {Type: einoschema.String, Desc: "Operation: details, receipt, gas_analysis, cost, token_transfers, internal_txs", Required: true},
 				"tx_hash":   {Type: einoschema.String, Desc: "Transaction hash to analyze", Required: true},

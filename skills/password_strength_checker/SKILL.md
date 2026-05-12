@@ -2,7 +2,7 @@
 name: password-strength-checker
 description: Check password strength and complexity
 activation_keywords: [password, strength, complexity, security, secure password]
-execution_mode: client
+execution_mode: server
 ---
 
 # Password Strength Checker

@@ -14,6 +14,7 @@ const (
 	TaskTypeAgent     TaskType = "agent"
 	TaskTypeLLM       TaskType = "llm"
 	TaskTypeTool      TaskType = "tool"
+	TaskTypeMCP       TaskType = "mcp"
 	TaskTypeHTTP      TaskType = "http"
 	TaskTypeCode      TaskType = "code"
 	TaskTypeCondition TaskType = "condition"

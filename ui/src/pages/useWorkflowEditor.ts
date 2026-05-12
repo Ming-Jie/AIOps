@@ -127,7 +127,6 @@ export function useWorkflowEditor () {
         sourceHandle: e.source_port || undefined,
         targetHandle: e.target_port || undefined,
         label: e.label || undefined,
-        animated: e.condition ? true : undefined,
         style: e.condition ? { stroke: '#FF9800' } : undefined,
         data: { condition: e.condition }
       })) as Edge[]
@@ -193,8 +192,7 @@ export function useWorkflowEditor () {
       source: connection.source,
       target: connection.target,
       sourceHandle: connection.sourceHandle || undefined,
-      targetHandle: connection.targetHandle || undefined,
-      animated: true
+      targetHandle: connection.targetHandle || undefined
     }
     edges.value = [...edges.value, edge]
   }
@@ -317,9 +315,11 @@ export function useWorkflowEditor () {
         workflowKey.value = created.key
         workflowDesc.value = created.description || ''
       }
-      $q.notify({ type: 'positive', message: t('createOk') })
-      activeTab.value = 'list'
-      await loadWorkflows()
+      if (!options.silent) {
+        $q.notify({ type: 'positive', message: t('createOk') })
+        activeTab.value = 'list'
+        await loadWorkflows()
+      }
       return true
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } }
@@ -403,23 +403,65 @@ export function useWorkflowEditor () {
   const executionDialogOpen = ref(false)
 
   /** Runs workflow on server; does not open the result dialog (caller may run canvas animation first). */
-  async function executeWorkflowDirect (): Promise<ExecuteWorkflowResponse | null> {
+  function applyWorkflowRunResults (payload: ExecuteWorkflowResponse | null): void {
+    const raw = payload?.node_results
+    const byNode = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+    nodes.value = nodes.value.map(n => {
+      const r = byNode[n.id]
+      const row = r && typeof r === 'object' ? r as Record<string, unknown> : null
+      const prevData = (n.data as Record<string, unknown>) || {}
+      if (!row) {
+        return {
+          ...n,
+          data: {
+            ...prevData,
+            runStatus: undefined,
+            runDurationMs: undefined,
+            runError: undefined
+          }
+        }
+      }
+      const err = typeof row.error === 'string' ? row.error : ''
+      const duration = typeof row.duration_ms === 'number' ? row.duration_ms : undefined
+      return {
+        ...n,
+        data: {
+          ...prevData,
+          runStatus: err ? 'error' : 'success',
+          runDurationMs: duration,
+          runError: err || undefined
+        }
+      }
+    })
+  }
+
+  function clearWorkflowRunResults (): void {
+    applyWorkflowRunResults(null)
+  }
+
+  async function executeWorkflowDirect (options: { message?: string; variables?: Record<string, unknown> } = {}): Promise<ExecuteWorkflowResponse | null> {
+    if (!validateAgentNodesForExecute()) return null
+    const saved = await persistWorkflowGraph({ silent: true })
+    if (!saved) return null
     if (!currentWorkflow.value?.id) {
       $q.notify({ type: 'negative', message: t('wfNoWorkflowToExecute') })
       return null
     }
-    if (!validateAgentNodesForExecute()) return null
-    const saved = await persistWorkflowGraph({ silent: true })
-    if (!saved) return null
     executing.value = true
     executionResult.value = null
+    clearWorkflowRunResults()
     try {
       const { data } = await api.post<APIResponse<ExecuteWorkflowResponse>>(
         `/workflows/graph/${currentWorkflow.value.id}/execute`,
-        { workflow_id: currentWorkflow.value.id, message: '' }
+        {
+          workflow_id: currentWorkflow.value.id,
+          message: options.message ?? '',
+          variables: options.variables
+        }
       )
       const payload = data.data ?? null
       executionResult.value = payload
+      applyWorkflowRunResults(payload)
       $q.notify({ type: 'positive', message: t('wfExecuteSuccess') })
       return payload
     } catch (e: unknown) {
@@ -500,20 +542,32 @@ export function useWorkflowEditor () {
     const outputSchema = data.outputSchema as Record<string, unknown> | undefined
 
     const defaultFields: Record<string, string[]> = {
+      start: ['message', 'type'],
+      end: ['output', 'type'],
       input: ['content'],
       output: ['content'],
       agent: ['content', 'type'],
       llm: ['content', 'type'],
-      tool: ['tool', 'input', 'result', 'type'],
-      condition: ['result', 'branch'],
-      merge: ['outputs', 'count']
+      tool: ['tool', 'input', 'result', 'error', 'type'],
+      mcp: ['tool_name', 'arguments', 'result', 'type'],
+      http: ['body', 'status_code', 'url', 'method', 'error', 'type'],
+      code: ['output', 'error', 'language', 'type'],
+      condition: ['result', 'branch', 'condition', 'type'],
+      knowledge: ['results', 'query', 'top_k', 'note', 'type'],
+      template: ['output', 'type'],
+      variable: ['assigned', 'type'],
+      merge: ['outputs', 'result', 'mode', 'type'],
+      loop: ['items', 'count', 'current_index', 'mode', 'type'],
+      branch: ['selected_node', 'result', 'condition', 'type'],
+      parallel: ['node_ids', 'timeout_ms', 'note', 'type'],
+      wait: ['status', 'elapsed', 'type']
     }
 
     const fields = defaultFields[nodeType] || ['content']
 
     if (outputSchema?.properties) {
       const props = outputSchema.properties as Record<string, unknown>
-      return [...fields, ...Object.keys(props)]
+      return Array.from(new Set([...fields, ...Object.keys(props)]))
     }
 
     return fields
@@ -562,6 +616,7 @@ export function useWorkflowEditor () {
     executionDialogOpen,
     executeWorkflow,
     executeWorkflowDirect,
+    clearWorkflowRunResults,
     loadExecutionHistory,
     getExecutionDetail
   }

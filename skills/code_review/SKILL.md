@@ -9,6 +9,15 @@ execution_mode: server
 
 Use when the user asks for **code review**, **PR review**, or feedback on patches/diffs.
 
+Use `builtin_code_review` for a fast server-side static scan when the user provides code or a diff.
+
+Tool fields:
+- `diff`: Patch/diff content to review.
+- `code`: Source code content to review.
+- `language`: Optional language hint.
+- `focus`: Optional comma-separated check types, such as `security`, `sql_injection`, `xss`, `path_traversal`.
+- `severity_threshold`: Optional minimum severity: `low`, `medium`, `high`, `critical`.
+
 Cover as relevant:
 
 - **Correctness**: logic bugs, edge cases, error handling

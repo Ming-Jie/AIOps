@@ -78,4 +78,3 @@ services:
 volumes:
   suiyu-pg:
   app_uploads:
-

@@ -4,6 +4,19 @@
       <div class="config-label">{{ t('wfNodeName') }}</div>
       <q-input v-model="nodeLabel" outlined dense :placeholder="t('wfNodeNamePh')" class="config-input" />
     </div>
+    <div class="config-group">
+      <div class="config-label">{{ t('wfEndOutputMapping') }}</div>
+      <q-input
+        :model-value="strField('output_mapping')"
+        outlined
+        dense
+        type="textarea"
+        rows="4"
+        :placeholder="t('wfEndOutputMappingPh')"
+        class="config-input"
+        @update:model-value="patchConfig('output_mapping', $event)"
+      />
+    </div>
   </div>
 </template>
 
@@ -19,6 +32,15 @@ const props = defineProps<{
 const emit = defineEmits(['update:label', 'update:config'])
 
 const { t } = useI18n()
+
+function patchConfig (key: string, value: unknown) {
+  emit('update:config', { ...props.config, [key]: value })
+}
+
+function strField (key: string): string {
+  const v = props.config[key]
+  return v == null ? '' : String(v)
+}
 
 const nodeLabel = computed({
   get: () => props.nodeLabel,

@@ -6,11 +6,11 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfCodeLanguage') }}</div>
-      <q-select :model-value="strField('language')" :options="[{'label':'Python','value':'python'}]" outlined dense emit-value map-options class="config-input" @update:model-value="patchConfig('language', $event)" />
+      <q-select :model-value="strField('language') || 'python'" :options="languageOptions" outlined dense emit-value map-options class="config-input" @update:model-value="patchConfig('language', $event)" />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfCode') }}</div>
-      <q-input :model-value="strField('code')" outlined dense type="textarea" rows="8" class="config-input" @update:model-value="patchConfig('code', $event)" />
+      <q-input :model-value="strField('code')" outlined dense type="textarea" rows="10" :placeholder="t('wfCodePh')" class="config-input" @update:model-value="patchConfig('code', $event)" />
     </div>
   </div>
 </template>
@@ -27,6 +27,11 @@ const props = defineProps<{
 const emit = defineEmits(['update:label', 'update:config'])
 
 const { t } = useI18n()
+
+const languageOptions = [
+  { label: 'Python', value: 'python' },
+  { label: 'JavaScript', value: 'javascript' }
+]
 
 function patchConfig (key: string, value: unknown) {
   emit('update:config', { ...props.config, [key]: value })

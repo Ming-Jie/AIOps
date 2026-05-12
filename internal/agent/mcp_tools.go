@@ -42,6 +42,140 @@ func registerMCPClientFromConfig(c *mcp.Client, cfg *schema.MCPConfig) {
 	c.RegisterConfig(cfg.ID, transport, target, mcp.HeadersFromConfig(cfg.Config), cfg.Config)
 }
 
+func (r *Runtime) ListMCPToolsByConfig(configID int64) ([]schema.MCPServer, error) {
+	st, ok := r.store.(mcpStorage)
+	if !ok {
+		return nil, fmt.Errorf("MCP storage not available")
+	}
+	return st.ListMCPTools(configID)
+}
+
+func (r *Runtime) CallMCPTool(ctx context.Context, configID int64, toolName string, args map[string]any) (string, error) {
+	if r == nil || r.mcpClient == nil || r.store == nil {
+		return "", fmt.Errorf("mcp client not initialized")
+	}
+	st, ok := r.store.(mcpStorage)
+	if !ok {
+		return "", fmt.Errorf("mcp storage not available")
+	}
+	if configID < 1 {
+		return "", fmt.Errorf("mcp_config_id is required")
+	}
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return "", fmt.Errorf("mcp tool_name is required")
+	}
+	cfg, err := st.GetMCPConfig(configID)
+	if err != nil || cfg == nil {
+		return "", fmt.Errorf("mcp config not found: %d", configID)
+	}
+	if !cfg.IsActive {
+		return "", fmt.Errorf("mcp config %d is inactive", configID)
+	}
+	if _, _, ok := mcp.ResolveMCPConnection(cfg); !ok {
+		return "", fmt.Errorf("mcp config %d has no connection target", configID)
+	}
+	if tools, err := st.ListMCPTools(configID); err == nil && len(tools) > 0 {
+		found := false
+		for _, t := range tools {
+			if t.ToolName != toolName {
+				continue
+			}
+			found = true
+			if !t.IsActive {
+				return "", fmt.Errorf("mcp tool %s is inactive", toolName)
+			}
+			break
+		}
+		if !found {
+			return "", fmt.Errorf("mcp tool %s is not synced for config %d", toolName, configID)
+		}
+	} else if err != nil {
+		logger.Warn("mcp ListMCPTools failed before workflow call", "mcp_config_id", configID, "err", err)
+	}
+	registerMCPClientFromConfig(r.mcpClient, cfg)
+	if args == nil {
+		args = map[string]any{}
+	}
+	return r.mcpClient.CallTool(ctx, configID, toolName, args)
+}
+
+// CallMCPTools loads all tools from an MCP config, registers them, and lets the LLM
+// (via the given agent) decide which tool to call with what arguments.
+func (r *Runtime) CallMCPTools(ctx context.Context, configID int64, agentID int64, message string) (string, error) {
+	if r == nil || r.mcpClient == nil || r.store == nil {
+		return "", fmt.Errorf("mcp client not initialized")
+	}
+	st, ok := r.store.(mcpStorage)
+	if !ok {
+		return "", fmt.Errorf("mcp storage not available")
+	}
+	if configID < 1 {
+		return "", fmt.Errorf("mcp_config_id is required")
+	}
+
+	cfg, err := st.GetMCPConfig(configID)
+	if err != nil || cfg == nil {
+		return "", fmt.Errorf("mcp config not found: %d", configID)
+	}
+	if !cfg.IsActive {
+		return "", fmt.Errorf("mcp config %d is inactive", configID)
+	}
+	if _, _, ok := mcp.ResolveMCPConnection(cfg); !ok {
+		return "", fmt.Errorf("mcp config %d has no connection target", configID)
+	}
+
+	registerMCPClientFromConfig(r.mcpClient, cfg)
+
+	tools, err := st.ListMCPTools(configID)
+	if err != nil {
+		return "", fmt.Errorf("failed to list MCP tools: %w", err)
+	}
+	if len(tools) == 0 {
+		return "", fmt.Errorf("no tools available for MCP config %d", configID)
+	}
+
+	seen := make(map[string]struct{})
+	var chatTools []tool.BaseTool
+	for _, t := range tools {
+		if t.ToolName == "" || !t.IsActive {
+			continue
+		}
+		extName := uniqueMCPInvokeName(configID, t.ToolName, seen)
+		ti, err := mcpserverToToolInfo(extName, t)
+		if err != nil {
+			logger.Warn("mcp tool schema skipped", "tool", t.ToolName, "err", err)
+			continue
+		}
+		tid := configID
+		tn := t.ToolName
+		chatTools = append(chatTools, toolutils.NewTool(ti, func(c context.Context, in map[string]any) (string, error) {
+			return r.mcpClient.CallTool(c, tid, tn, in)
+		}))
+	}
+	if len(chatTools) == 0 {
+		return "", fmt.Errorf("no active tools available for MCP config %d", configID)
+	}
+
+	agent, ok := r.GetAgent(agentID)
+	if !ok {
+		return "", fmt.Errorf("agent not found: %d", agentID)
+	}
+
+	ctx2 := r.ensureUsageTracking(ctx, agent, "")
+	defer r.flushUsageSession(ctx2)
+
+	defaultTools, err := r.allToolsForAgent(agent)
+	if err != nil {
+		return "", err
+	}
+
+	combinedTools := append(defaultTools, chatTools...)
+	combinedTools = r.wrapToolsWithAudit(agent, "", "", combinedTools)
+
+	return r.runAgentCore(ctx2, agent, "", message, nil, combinedTools)
+}
+
 // mcpToolsForAgent builds invokable tools for the chat model from persisted MCP tool rows.
 // It registers each MCP config with the client so CallTool can open a session.
 func (r *Runtime) mcpToolsForAgent(agent *schema.AgentWithRuntime) ([]tool.BaseTool, error) {

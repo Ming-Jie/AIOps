@@ -2,6 +2,7 @@
 name: devtool
 description: Development utilities - datetime, hash, uuid, encoding/decoding, password generator, regex validation
 activation_keywords: [datetime, hash, uuid, base64, base58, encode, decode, password, regex, time, now]
+execution_mode: server
 ---
 
 # DevTool Skill
