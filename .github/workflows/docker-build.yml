@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_PREFIX: ${{ github.repository }}-agent
+  IMAGE_NAME_PREFIX: ${{ github.repository }}
 
 jobs:
   build-and-push-app:
