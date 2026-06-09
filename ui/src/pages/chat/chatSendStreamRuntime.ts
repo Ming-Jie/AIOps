@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { ChatGroup, ChatReactStep } from 'src/api/types'
+import type { ChatReactStep } from 'src/api/types'
 import type { ThoughtStepVM } from './chatReactStepsSync'
 import { cloneThoughtStepsSnapshot } from './chatReactStepsSync'
 
@@ -30,9 +30,12 @@ export type CreateSendStreamLifecycleDeps = {
   thoughtStatus: Ref<'running' | 'completed'>
   thoughtSteps: Ref<ThoughtStepVM[]>
   sessionId: Ref<string | null>
-  currentGroup: Ref<ChatGroup | null>
+  currentGroup: Ref<null>
   lastTurnDurationMs: Ref<number | null>
-  parseStreamEvents: (responseText: string) => string
+  /** Feed one fetch chunk; return accumulated user-visible assistant text. */
+  parseStreamChunk: (chunk: string) => string
+  /** Flush trailing partial SSE line at end of stream. */
+  parseStreamFinish: () => string
   scrollChatToBottom: () => void
   t: (key: string) => string
   setStoredGroupSessionId: (groupId: number, sid: string) => void
@@ -51,14 +54,13 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
     sessionId,
     currentGroup,
     lastTurnDurationMs,
-    parseStreamEvents,
+    parseStreamChunk,
+    parseStreamFinish,
     scrollChatToBottom,
     t,
     setStoredGroupSessionId,
     setStreamAbortController
   } = deps
-
-  const accumulated = { value: '' }
 
   const stampAssistantTimeOnce = (): void => {
     if (isGroupChat) {
@@ -110,9 +112,7 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
     typewriterRaf = requestAnimationFrame(tickTypewriter)
   }
 
-  const applyParsed = (isFinal: boolean): void => {
-    const parsedContent = parseStreamEvents(accumulated.value)
-
+  const applyParsed = (parsedContent: string, isFinal: boolean): void => {
     if (isGroupChat) {
       stampAssistantTimeOnce()
       if (!isFinal) {
@@ -132,7 +132,7 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
       } else {
         scheduleTypewriter()
       }
-    } else {
+    } else if (shownLen < parsedContent.length) {
       scheduleTypewriter()
     }
     row.reactSteps = cloneThoughtStepsSnapshot(thoughtSteps.value)
@@ -146,7 +146,7 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
 
   const finalizeStreamAbort = (): void => {
     thoughtStatus.value = 'completed'
-    applyParsed(true)
+    applyParsed(parseStreamFinish(), true)
     const suffix = '\n\n' + t('chatReplyStoppedSuffix')
     const stoppedLabel = t('chatReplyStoppedSuffix')
     if (isGroupChat) {
@@ -191,7 +191,10 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        },
         body: JSON.stringify(body),
         signal: ac.signal
       })
@@ -212,26 +215,32 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
       if (sessionIdHeader) {
         sessionId.value = sessionIdHeader
         if (isGroupChat && currentGroup.value) {
-          setStoredGroupSessionId(currentGroup.value.id, sessionIdHeader)
+          setStoredGroupSessionId((currentGroup.value as { id: number }).id, sessionIdHeader)
         }
       }
 
       const reader = response.body?.getReader()
       if (!reader) {
-        accumulated.value = await response.text()
+        const text = await response.text()
+        if (text) {
+          applyParsed(parseStreamChunk(text), false)
+        }
         thoughtStatus.value = 'completed'
-        applyParsed(true)
+        applyParsed(parseStreamFinish(), true)
       } else {
         const decoder = new TextDecoder()
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          accumulated.value += decoder.decode(value, { stream: true })
-          applyParsed(false)
+          const chunk = decoder.decode(value, { stream: true })
+          applyParsed(parseStreamChunk(chunk), false)
         }
-        accumulated.value += decoder.decode()
+        const tail = decoder.decode()
+        if (tail) {
+          applyParsed(parseStreamChunk(tail), false)
+        }
         thoughtStatus.value = 'completed'
-        applyParsed(true)
+        applyParsed(parseStreamFinish(), true)
       }
 
       const durationHeader = response.headers.get('X-Duration-MS')

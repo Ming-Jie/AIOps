@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 type RBACService struct {

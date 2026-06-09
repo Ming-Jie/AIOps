@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // NormalizeMCPTransport returns a canonical transport string for the MCP client.

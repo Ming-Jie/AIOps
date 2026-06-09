@@ -2,19 +2,18 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *PostgresStorage) CreateChatSession(ctx context.Context, agentID int64, userID string, groupID int64) (*schema.ChatSession, error) {
+func (s *PostgresStorage) CreateChatSession(ctx context.Context, agentID int64, userID string, _ int64) (*schema.ChatSession, error) {
 	var n int64
 	err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents WHERE id = $1`, agentID).Scan(&n)
 	if err != nil {
@@ -30,32 +29,60 @@ func (s *PostgresStorage) CreateChatSession(ctx context.Context, agentID int64, 
 	} else {
 		uid = userID
 	}
-	var gid any
-	if groupID > 0 {
-		gid = groupID
-	} else {
-		gid = nil
-	}
 	var created, updated time.Time
 	err = s.pool.QueryRow(ctx,
-		`INSERT INTO chat_sessions (id, agent_id, user_id, group_id) VALUES ($1, $2, $3, $4) RETURNING created_at, updated_at`,
-		id, agentID, uid, gid,
+		`INSERT INTO chat_sessions (id, agent_id, user_id) VALUES ($1, $2, $3) RETURNING created_at, updated_at`,
+		id, agentID, uid,
 	).Scan(&created, &updated)
 	if err != nil {
 		return nil, err
 	}
-	out := &schema.ChatSession{
+	return &schema.ChatSession{
 		SessionID: id,
 		AgentID:   agentID,
 		UserID:    userID,
 		Title:     "",
 		CreatedAt: created,
 		UpdatedAt: updated,
+	}, nil
+}
+
+func (s *PostgresStorage) ListChatSessionsByUserPrefix(ctx context.Context, agentID int64, userIDPrefix string, limit, offset int) ([]schema.ChatSession, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
 	}
-	if groupID > 0 {
-		out.GroupID = groupID
+	if offset < 0 {
+		offset = 0
 	}
-	return out, nil
+	userIDPrefix = strings.TrimSpace(userIDPrefix)
+	if userIDPrefix == "" {
+		return []schema.ChatSession{}, nil
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions
+		 WHERE agent_id = $1 AND user_id LIKE $2 ESCAPE '\' ORDER BY updated_at DESC LIMIT $3 OFFSET $4`,
+		agentID, escapeLikePrefix(userIDPrefix)+"%", limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []schema.ChatSession
+	for rows.Next() {
+		var sess schema.ChatSession
+		if err := rows.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, sess)
+	}
+	return list, rows.Err()
+}
+
+func escapeLikePrefix(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 func (s *PostgresStorage) ListChatSessions(ctx context.Context, agentID int64, userID string, limit, offset int) ([]schema.ChatSession, error) {
@@ -68,11 +95,11 @@ func (s *PostgresStorage) ListChatSessions(ctx context.Context, agentID int64, u
 	var q string
 	var args []any
 	if userID == "" {
-		q = `SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at, group_id FROM chat_sessions
+		q = `SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions
 			WHERE agent_id = $1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3`
 		args = []any{agentID, limit, offset}
 	} else {
-		q = `SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at, group_id FROM chat_sessions
+		q = `SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions
 			WHERE agent_id = $1 AND user_id = $2 ORDER BY updated_at DESC LIMIT $3 OFFSET $4`
 		args = []any{agentID, userID, limit, offset}
 	}
@@ -85,12 +112,8 @@ func (s *PostgresStorage) ListChatSessions(ctx context.Context, agentID int64, u
 	var list []schema.ChatSession
 	for rows.Next() {
 		var sess schema.ChatSession
-		var gID sql.NullInt64
-		if err := rows.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt, &gID); err != nil {
+		if err := rows.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
 			return nil, err
-		}
-		if gID.Valid {
-			sess.GroupID = gID.Int64
 		}
 		list = append(list, sess)
 	}
@@ -99,20 +122,16 @@ func (s *PostgresStorage) ListChatSessions(ctx context.Context, agentID int64, u
 
 func (s *PostgresStorage) GetChatSession(ctx context.Context, sessionID string) (*schema.ChatSession, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at, group_id FROM chat_sessions WHERE id = $1`,
+		`SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions WHERE id = $1`,
 		sessionID,
 	)
 	var sess schema.ChatSession
-	var gID sql.NullInt64
-	err := row.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt, &gID)
+	err := row.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSessionNotFound
 		}
 		return nil, err
-	}
-	if gID.Valid {
-		sess.GroupID = gID.Int64
 	}
 	return &sess, nil
 }
@@ -584,176 +603,5 @@ func (s *PostgresStorage) GetA2ACard(ctx context.Context, id int64) (*model.A2AC
 
 func (s *PostgresStorage) DeleteA2ACard(ctx context.Context, id int64) error {
 	_, err := s.pool.Exec(ctx, "DELETE FROM a2a_cards WHERE id = $1", id)
-	return err
-}
-
-// Chat Group operations
-
-func (s *PostgresStorage) CreateChatGroup(ctx context.Context, req *schema.CreateGroupRequest, userID string) (*model.ChatGroup, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-
-	var groupID int64
-	err = tx.QueryRow(ctx,
-		`INSERT INTO chat_groups (name, created_by) VALUES ($1, $2) RETURNING id`,
-		req.Name, userID,
-	).Scan(&groupID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Insert members
-	for _, agentID := range req.AgentIDs {
-		_, err = tx.Exec(ctx,
-			`INSERT INTO chat_group_members (group_id, agent_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			groupID, agentID,
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-
-	return s.GetChatGroup(ctx, groupID)
-}
-
-func (s *PostgresStorage) GetChatGroup(ctx context.Context, id int64) (*model.ChatGroup, error) {
-	var group model.ChatGroup
-	err := s.pool.QueryRow(ctx,
-		`SELECT g.id, g.name, COALESCE(g.created_by, ''), g.created_at,
-			COALESCE((SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.group_id = g.id), g.created_at)
-		 FROM chat_groups g WHERE g.id = $1`,
-		id,
-	).Scan(&group.ID, &group.Name, &group.CreatedBy, &group.CreatedAt, &group.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get members
-	rows, err := s.pool.Query(ctx,
-		`SELECT m.agent_id, COALESCE(a.name, '') 
-		 FROM chat_group_members m 
-		 LEFT JOIN agents a ON m.agent_id = a.id 
-		 WHERE m.group_id = $1`,
-		id,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var member model.ChatGroupMember
-		var agentName string
-		if err := rows.Scan(&member.AgentID, &agentName); err != nil {
-			return nil, err
-		}
-		member.GroupID = id
-		member.AgentName = agentName
-		group.Members = append(group.Members, member)
-	}
-
-	return &group, nil
-}
-
-func (s *PostgresStorage) ListChatGroups(ctx context.Context, userID string) ([]*model.ChatGroup, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT g.id, g.name, COALESCE(g.created_by, ''), g.created_at,
-			COALESCE(MAX(cs.updated_at), g.created_at) AS updated_at
-		 FROM chat_groups g
-		 LEFT JOIN chat_sessions cs ON cs.group_id = g.id
-		 GROUP BY g.id, g.name, g.created_by, g.created_at
-		 ORDER BY COALESCE(MAX(cs.updated_at), g.created_at) DESC`,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var groups []*model.ChatGroup
-	for rows.Next() {
-		var group model.ChatGroup
-		if err := rows.Scan(&group.ID, &group.Name, &group.CreatedBy, &group.CreatedAt, &group.UpdatedAt); err != nil {
-			return nil, err
-		}
-		groups = append(groups, &group)
-	}
-
-	// Get members for each group
-	for _, group := range groups {
-		memberRows, err := s.pool.Query(ctx,
-			`SELECT m.agent_id, COALESCE(a.name, '') 
-			 FROM chat_group_members m 
-			 LEFT JOIN agents a ON m.agent_id = a.id 
-			 WHERE m.group_id = $1`,
-			group.ID,
-		)
-		if err != nil {
-			return nil, err
-		}
-		for memberRows.Next() {
-			var member model.ChatGroupMember
-			var agentName string
-			if err := memberRows.Scan(&member.AgentID, &agentName); err != nil {
-				memberRows.Close()
-				return nil, err
-			}
-			member.GroupID = group.ID
-			member.AgentName = agentName
-			group.Members = append(group.Members, member)
-		}
-		memberRows.Close()
-	}
-
-	return groups, nil
-}
-
-func (s *PostgresStorage) UpdateChatGroup(ctx context.Context, id int64, req *schema.UpdateGroupRequest) (*model.ChatGroup, error) {
-	if req.Name != nil {
-		_, err := s.pool.Exec(ctx, `UPDATE chat_groups SET name = $1 WHERE id = $2`, *req.Name, id)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if len(req.AgentIDs) > 0 {
-		// Replace all members
-		tx, err := s.pool.Begin(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defer tx.Rollback(ctx)
-
-		_, err = tx.Exec(ctx, `DELETE FROM chat_group_members WHERE group_id = $1`, id)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, agentID := range req.AgentIDs {
-			_, err = tx.Exec(ctx,
-				`INSERT INTO chat_group_members (group_id, agent_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-				id, agentID,
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		if err := tx.Commit(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	return s.GetChatGroup(ctx, id)
-}
-
-func (s *PostgresStorage) DeleteChatGroup(ctx context.Context, id int64) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM chat_groups WHERE id = $1`, id)
 	return err
 }

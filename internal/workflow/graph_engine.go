@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/model"
 )
 
 func truncateForLog(s string, maxLen int) string {
@@ -146,6 +146,7 @@ func (e *GraphEngine) Execute(ctx context.Context, workflowID int64, userMessage
 		for k, v := range variables {
 			execCtx.Variables[k] = v
 			execCtx.VarContext.SetGlobalVariable(k, v)
+			execCtx.VarContext.SetInputVariable(k, v)
 		}
 	}
 	if def.Variables != nil {
@@ -215,6 +216,7 @@ func (e *GraphEngine) Execute(ctx context.Context, workflowID int64, userMessage
 		// 并行执行所有就绪节点
 		var wg sync.WaitGroup
 		var firstError *NodeResult
+		batchResults := make(map[string]NodeResult, len(readyNodes))
 
 		for _, nodeID := range readyNodes {
 			wg.Add(1)
@@ -266,10 +268,7 @@ func (e *GraphEngine) Execute(ctx context.Context, workflowID int64, userMessage
 				}
 
 				resultsMu.Lock()
-				results = append(results, result)
-				if firstError == nil && result.Error != "" {
-					firstError = &result
-				}
+				batchResults[nid] = result
 				resultsMu.Unlock()
 
 				// 更新输出（需要锁保护）
@@ -290,6 +289,17 @@ func (e *GraphEngine) Execute(ctx context.Context, workflowID int64, userMessage
 		}
 
 		wg.Wait()
+
+		for _, nid := range readyNodes {
+			r, ok := batchResults[nid]
+			if !ok {
+				continue
+			}
+			results = append(results, r)
+			if firstError == nil && r.Error != "" {
+				firstError = &r
+			}
+		}
 
 		// 如果有错误，立即返回
 		if firstError != nil {
@@ -334,11 +344,7 @@ func (e *GraphEngine) Execute(ctx context.Context, workflowID int64, userMessage
 	}
 
 	exec.Status = "success"
-	if s, ok := finalOutput.(string); ok {
-		exec.Output = s
-	} else {
-		exec.Output = fmt.Sprintf("%v", finalOutput)
-	}
+	exec.Output = FormatWorkflowOutput(finalOutput)
 	exec.NodeResults = convertToModelResults(results)
 	finishTime := time.Now()
 	exec.FinishedAt = &finishTime
@@ -354,47 +360,32 @@ func (e *GraphEngine) Execute(ctx context.Context, workflowID int64, userMessage
 }
 
 func (e *GraphEngine) buildNodeInput(node *model.WorkflowNode, execCtx *ExecutionContext) string {
+	prepared := prepareNodeConfig(node, execCtx)
 	input := ""
 
-	if node.Config != nil {
-		if inputMapping, ok := node.Config["input_mapping"].(map[string]any); ok {
-			var mappingParts []string
-			for targetField, sourcePath := range inputMapping {
-				if sourceStr, ok := sourcePath.(string); ok {
-					val := e.resolveTemplateValue(sourceStr, execCtx)
-					if val != "" {
-						mappingParts = append(mappingParts, fmt.Sprintf("%s: %s", targetField, val))
-					}
-				}
+	if mapping, ok := prepared["input_mapping"].(map[string]any); ok && len(mapping) > 0 {
+		var mappingParts []string
+		for targetField, val := range mapping {
+			if val == nil {
+				continue
 			}
-			if len(mappingParts) > 0 {
-				input = strings.Join(mappingParts, ", ")
-			}
+			mappingParts = append(mappingParts, fmt.Sprintf("%s: %v", targetField, val))
 		}
+		if len(mappingParts) > 0 {
+			input = strings.Join(mappingParts, "\n")
+		}
+	}
 
+	if input == "" && node.Config != nil {
 		if promptTemplate, ok := node.Config["prompt_template"]; ok {
 			if tmpl, ok := promptTemplate.(string); ok && tmpl != "" {
-				if input != "" {
-					input = e.renderTemplate(tmpl, execCtx)
-				} else {
-					input = e.renderTemplate(tmpl, execCtx)
-				}
+				input = e.renderTemplate(tmpl, execCtx)
 			}
 		}
 	}
 
 	if input == "" {
 		input = execCtx.UserMessage
-	}
-
-	if len(execCtx.NodeOutputs) > 0 {
-		var prevOutputs []string
-		for nodeID, output := range execCtx.NodeOutputs {
-			prevOutputs = append(prevOutputs, fmt.Sprintf("[%s]: %v", nodeID, output))
-		}
-		if len(prevOutputs) > 0 {
-			input = fmt.Sprintf("[Previous outputs]\n%s\n\n[Current input]\n%s", strings.Join(prevOutputs, "\n"), input)
-		}
 	}
 
 	return input
@@ -632,11 +623,16 @@ func (e *GraphEngine) executeNode(ctx context.Context, node *model.WorkflowNode,
 	input := &TaskInput{
 		NodeID:      node.ID,
 		NodeLabel:   node.Label,
-		Config:      node.Config,
+		Config:      prepareNodeConfig(node, execCtx),
 		Variables:   execCtx.Variables,
 		NodeOutputs: execCtx.NodeOutputs,
 		UserMessage: execCtx.UserMessage,
 		VarContext:  execCtx.VarContext,
+	}
+
+	if err := e.validateInputSchema(node, execCtx); err != nil {
+		result.Error = err.Error()
+		return result
 	}
 
 	if node.AgentID != nil && taskType == TaskTypeAgent {
@@ -738,6 +734,11 @@ func (e *GraphEngine) validateInputSchema(node *model.WorkflowNode, execCtx *Exe
 					hasMapping = true
 					break
 				}
+			}
+		}
+		if !hasMapping {
+			if inputValues, ok := node.Config["input_values"].(map[string]any); ok && inputValuePresent(inputValues, field) {
+				hasMapping = true
 			}
 		}
 

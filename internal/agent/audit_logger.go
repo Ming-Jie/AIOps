@@ -6,8 +6,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/model"
 )
 
 type AuditStore interface {

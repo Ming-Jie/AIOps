@@ -17,9 +17,9 @@ import (
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/dop251/goja"
 	"github.com/expr-lang/expr"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/skills"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/skills"
 )
 
 const (
@@ -590,7 +590,7 @@ func execBuiltinWebSearch(_ context.Context, in map[string]any) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "sya-agent-builtin-search/1.0")
+	req.Header.Set("User-Agent", "aiops-agent-builtin-search/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err

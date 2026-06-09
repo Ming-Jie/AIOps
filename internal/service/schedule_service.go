@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 type ScheduleService struct {

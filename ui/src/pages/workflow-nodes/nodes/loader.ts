@@ -1,4 +1,5 @@
 import { registerNode } from './index'
+import { registerNodeType } from '../index'
 
 // Import all palette and config components
 import StartPalette from './palettes/StartPalette.vue'
@@ -53,96 +54,24 @@ import VariablePalette from './palettes/VariablePalette.vue'
 import VariableConfig from './configs/VariableNodeConfig.vue'
 import { variableNode, defaultConfig as VariableDefCfg } from './variable'
 
-// Register all nodes
-registerNode({
-  node: startNode,
-  config: StartDefCfg,
-  Palette: StartPalette,
-  Config: StartConfig
-})
+// Register all nodes in both registries
+function reg (node: typeof startNode, cfg: Record<string, unknown>, Palette: any, Config: any) {
+  registerNodeType(node)
+  registerNode({ node, config: cfg, Palette, Config })
+}
 
-registerNode({
-  node: endNode,
-  config: EndDefCfg,
-  Palette: EndPalette,
-  Config: EndConfig
-})
-
-registerNode({
-  node: agentNode,
-  config: AgentDefCfg,
-  Palette: AgentPalette,
-  Config: AgentConfig
-})
-
-registerNode({
-  node: llmNode,
-  config: LLMDefCfg,
-  Palette: LLMPalette,
-  Config: LLMConfig
-})
-
-registerNode({
-  node: knowledgeNode,
-  config: KnowledgeDefCfg,
-  Palette: KnowledgePalette,
-  Config: KnowledgeConfig
-})
-
-registerNode({
-  node: conditionNode,
-  config: ConditionDefCfg,
-  Palette: ConditionPalette,
-  Config: ConditionConfig
-})
-
-registerNode({
-  node: mergeNode,
-  config: MergeDefCfg,
-  Palette: MergePalette,
-  Config: MergeConfig
-})
-
-registerNode({
-  node: toolNode,
-  config: ToolDefCfg,
-  Palette: ToolPalette,
-  Config: ToolConfig
-})
-
-registerNode({
-  node: mcpNode,
-  config: McpDefCfg,
-  Palette: McpPalette,
-  Config: McpConfig
-})
-
-registerNode({
-  node: httpNode,
-  config: HttpDefCfg,
-  Palette: HttpPalette,
-  Config: HttpConfig
-})
-
-registerNode({
-  node: codeNode,
-  config: CodeDefCfg,
-  Palette: CodePalette,
-  Config: CodeConfig
-})
-
-registerNode({
-  node: templateNode,
-  config: TemplateDefCfg,
-  Palette: TemplatePalette,
-  Config: TemplateConfig
-})
-
-registerNode({
-  node: variableNode,
-  config: VariableDefCfg,
-  Palette: VariablePalette,
-  Config: VariableConfig
-})
+reg(startNode, StartDefCfg, StartPalette, StartConfig)
+reg(endNode, EndDefCfg, EndPalette, EndConfig)
+reg(agentNode, AgentDefCfg, AgentPalette, AgentConfig)
+reg(llmNode, LLMDefCfg, LLMPalette, LLMConfig)
+reg(knowledgeNode, KnowledgeDefCfg, KnowledgePalette, KnowledgeConfig)
+reg(conditionNode, ConditionDefCfg, ConditionPalette, ConditionConfig)
+reg(mergeNode, MergeDefCfg, MergePalette, MergeConfig)
+reg(toolNode, ToolDefCfg, ToolPalette, ToolConfig)
+reg(mcpNode, McpDefCfg, McpPalette, McpConfig)
+reg(httpNode, HttpDefCfg, HttpPalette, HttpConfig)
+reg(codeNode, CodeDefCfg, CodePalette, CodeConfig)
+reg(templateNode, TemplateDefCfg, TemplatePalette, TemplateConfig)
+reg(variableNode, VariableDefCfg, VariablePalette, VariableConfig)
 
 export { getNode, getAllNodes, getNodesByCategory, getCategories } from './index'

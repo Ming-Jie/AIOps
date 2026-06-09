@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 func (s *PostgresStorage) CreateLearning(req *schema.CreateLearningRequest) (*schema.Learning, error) {

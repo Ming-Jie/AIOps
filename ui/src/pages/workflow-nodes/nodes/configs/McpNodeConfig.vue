@@ -34,7 +34,7 @@
         :disable="!mcpConfigId"
         :placeholder="t('wfMcpToolPh')"
         class="config-input"
-        @update:model-value="patchConfig('tool_name', $event || '')"
+        @update:model-value="onToolName"
       >
         <template #option="scope">
           <q-item v-bind="scope.itemProps">
@@ -50,17 +50,16 @@
       <div class="text-caption text-grey-6 q-mt-xs">{{ t('wfMcpToolAutoHint') }}</div>
     </div>
 
-    <!-- Arguments (always shown) -->
+    <div v-if="hasCatalogSchema" class="config-group">
+      <div class="text-caption text-positive">{{ t('wfCatalogSchemaApplied') }}</div>
+    </div>
+
     <div class="config-group">
       <div class="config-label">{{ t('wfMcpArguments') }}</div>
-      <q-input
+      <WorkflowVariableField
         :model-value="strField('arguments')"
-        outlined
-        dense
-        type="textarea"
-        rows="6"
+        :rows="6"
         :placeholder="t('wfMcpArgumentsPh')"
-        class="config-input"
         @update:model-value="patchConfig('arguments', $event)"
       />
       <div class="text-caption text-grey-6 q-mt-xs">{{ t('wfMcpArgumentsHint') }}</div>
@@ -73,6 +72,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from 'boot/axios'
 import type { APIResponse, MCPConfig, MCPTool } from 'src/api/types'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
+import {
+  argumentsJsonFromSchema,
+  normalizeCatalogInputSchema
+} from 'src/lib/schemaCatalog'
 
 const props = defineProps<{
   nodeLabel: string
@@ -82,6 +86,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:label': [v: string]
   'update:config': [v: Record<string, unknown>]
+  'update:inputSchema': [v: Record<string, unknown> | null]
 }>()
 
 const { t } = useI18n()
@@ -113,6 +118,11 @@ const mcpConfigId = computed(() => {
   return Number.isNaN(n) ? null : n
 })
 
+const hasCatalogSchema = computed(() => {
+  const schema = props.config.tool_input_schema
+  return !!schema && typeof schema === 'object'
+})
+
 const nodeLabel = computed({
   get: () => props.nodeLabel,
   set: (v) => emit('update:label', v)
@@ -127,12 +137,40 @@ function strField (key: string): string {
   return v == null ? '' : String(v)
 }
 
+function applyToolCatalog (toolName: string) {
+  if (!toolName) {
+    emit('update:inputSchema', null)
+    emit('update:config', {
+      ...props.config,
+      tool_name: '',
+      tool_input_schema: undefined
+    })
+    return
+  }
+  const tool = mcpTools.value.find(t => t.tool_name === toolName)
+  const schema = normalizeCatalogInputSchema(tool?.input_schema)
+  emit('update:inputSchema', schema)
+  emit('update:config', {
+    ...props.config,
+    tool_name: toolName,
+    tool_input_schema: tool?.input_schema ?? undefined,
+    arguments: argumentsJsonFromSchema(schema)
+  })
+}
+
 function onMcpConfigId (val: number | null) {
+  emit('update:inputSchema', null)
   emit('update:config', {
     ...props.config,
     mcp_config_id: val == null ? 0 : val,
-    tool_name: ''
+    tool_name: '',
+    tool_input_schema: undefined,
+    arguments: '{}'
   })
+}
+
+function onToolName (val: string | null) {
+  applyToolCatalog(val ? String(val) : '')
 }
 
 async function loadMcpConfigs (): Promise<void> {

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/fisk086/sya/internal/chatfile"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/chatfile"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // Per-file and total caps so a single upload cannot exhaust model context.

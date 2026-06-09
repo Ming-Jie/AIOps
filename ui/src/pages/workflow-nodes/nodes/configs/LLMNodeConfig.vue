@@ -22,20 +22,22 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfPromptTemplate') }}</div>
-      <q-input
+      <div class="text-caption text-grey-7 q-mb-xs">{{ t('wfPromptVarHint') }}</div>
+      <WorkflowVariableField
         :model-value="strField('prompt')"
-        outlined
-        dense
-        type="textarea"
-        rows="6"
+        :rows="6"
         :placeholder="t('wfPromptTemplatePh')"
-        class="config-input"
         @update:model-value="patchConfig('prompt', $event)"
       />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfLLMSystemPrompt') }}</div>
-      <q-input :model-value="strField('system_prompt')" outlined dense type="textarea" rows="3" :placeholder="t('wfLLMSystemPromptPh')" class="config-input" @update:model-value="patchConfig('system_prompt', $event)" />
+      <WorkflowVariableField
+        :model-value="strField('system_prompt')"
+        :rows="3"
+        :placeholder="t('wfLLMSystemPromptPh')"
+        @update:model-value="patchConfig('system_prompt', $event)"
+      />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfLLMTemperature') }}</div>
@@ -47,6 +49,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
 import { useAgentNodeAgentOptions, useAgentNodeForm } from './useAgentNodeConfig'
 
 const props = defineProps<{

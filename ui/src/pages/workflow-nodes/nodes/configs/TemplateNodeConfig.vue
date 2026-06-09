@@ -6,7 +6,11 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfTemplate') }}</div>
-      <q-input :model-value="strField('template')" outlined dense type="textarea" rows="4" class="config-input" @update:model-value="patchConfig('template', $event)" />
+      <WorkflowVariableField
+        :model-value="strField('template')"
+        :rows="4"
+        @update:model-value="patchConfig('template', $event)"
+      />
     </div>
   </div>
 </template>
@@ -14,6 +18,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
 
 const props = defineProps<{
   nodeLabel: string

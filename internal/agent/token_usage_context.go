@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 	einoschema "github.com/cloudwego/eino/schema"
 )
 

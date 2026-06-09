@@ -1,9 +1,9 @@
 package authprovider
 
 import (
-	"github.com/fisk086/sya/internal/auth"
-	"github.com/fisk086/sya/internal/config"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/auth"
+	"github.com/fisk086/aiops/internal/config"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 // DefaultProviders returns all known SSO channels for registration order:

@@ -11,7 +11,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 type VersionController struct {

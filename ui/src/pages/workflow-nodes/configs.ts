@@ -1,14 +1,14 @@
 import type { NodeConfig } from './types'
 
 export const defaultNodeConfigs: Record<string, NodeConfig> = {
-  start: { user_prompt: '', input_schema: {} },
+  start: { user_prompt: '', input_fields: [], input_schema: {} },
   end: { output_mapping: '' },
   agent: { agent_id: 0, prompt_template: '' },
-  llm: { agent_id: 0, prompt: '', system_prompt: '', temperature: 0.7 },
+  llm: { agent_id: 0, prompt: '', system_prompt: '', temperature: 0.7, output_var: 'content' },
   tool: { tool_name: '', tool_input: '' },
   mcp: { mcp_config_id: 0, tool_name: '', arguments: '{}' },
   http: { method: 'GET', url: '', headers: {}, body: '', timeout_ms: 30000 },
-  code: { language: 'python', code: '' },
+  code: { language: 'python', code: '', outputs: {} },
   condition: { condition: '' },
   knowledge: { knowledge_base_id: 0, query: '', top_k: 5 },
   template: { template: '' },

@@ -17,14 +17,86 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	einoschema "github.com/cloudwego/eino/schema"
-	"github.com/fisk086/sya/internal/approval"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/mcp"
-	agentmodel "github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/skills"
-	storepkg "github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/approval"
+	"github.com/fisk086/aiops/internal/imoutbound"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/mcp"
+	agentmodel "github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/skills"
+	storepkg "github.com/fisk086/aiops/internal/storage"
 )
+
+type agentModelKey struct{}
+
+func contextWithAgentID(ctx context.Context, agentID int64) context.Context {
+	return context.WithValue(ctx, agentModelKey{}, agentID)
+}
+
+func agentIDFromContext(ctx context.Context) int64 {
+	id, _ := ctx.Value(agentModelKey{}).(int64)
+	return id
+}
+
+// resolvableModel wraps a default model and transparently delegates to a
+// per-agent model when the caller's context carries an agent with a model_config_id.
+// Sub-functions (react_engine, plan_execute) are not touched — the resolution
+// happens at Generate/Stream time via context.
+type resolvableModel struct {
+	defaultModel model.ToolCallingChatModel
+	provider     ModelProvider
+	agents       func(int64) (*schema.AgentWithRuntime, bool)
+	cache        sync.Map
+}
+
+var errNoModelConfig = errors.New("agent has no model config bound")
+
+func (m *resolvableModel) resolve(ctx context.Context) (model.ToolCallingChatModel, error) {
+	aid := agentIDFromContext(ctx)
+	if aid == 0 || m.provider == nil {
+		return nil, errNoModelConfig
+	}
+	ag, ok := m.agents(aid)
+	if !ok || ag.RuntimeProfile == nil || ag.RuntimeProfile.ModelConfigID == 0 {
+		return nil, errNoModelConfig
+	}
+	cid := ag.RuntimeProfile.ModelConfigID
+	if cached, ok := m.cache.Load(cid); ok {
+		return cached.(model.ToolCallingChatModel), nil
+	}
+	chatModel, err := m.provider.GetChatModel(ctx, cid)
+	if err != nil {
+		return nil, err
+	}
+	// Wrap for usage tracking and content compatibility (ensureOpenAICompatibleMessageContent).
+	wrapped := WrapToolCallingModelWithUsageTracking(chatModel)
+	m.cache.Store(cid, wrapped)
+	return wrapped, nil
+}
+
+func (m *resolvableModel) Generate(ctx context.Context, msgs []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
+	chatModel, err := m.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return chatModel.Generate(ctx, msgs, opts...)
+}
+
+func (m *resolvableModel) Stream(ctx context.Context, msgs []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
+	chatModel, err := m.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return chatModel.Stream(ctx, msgs, opts...)
+}
+
+func (m *resolvableModel) WithTools(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error) {
+	// WithTools is not called in this codebase (tools are passed via model.WithTools option).
+	// Delegate to default to satisfy the interface.
+	return m, nil
+}
+
+
 
 type Runtime struct {
 	mu         sync.RWMutex
@@ -32,8 +104,9 @@ type Runtime struct {
 	byName     map[string]*schema.AgentWithRuntime
 	byCategory map[string][]*schema.AgentWithRuntime
 
-	chatModel        model.ToolCallingChatModel
-	mcpClient        *mcp.Client
+	chatModel      model.ToolCallingChatModel
+	modelProvider  ModelProvider
+	mcpClient      *mcp.Client
 	skillLoader      *skills.Loader
 	skillRegistry    *skills.Registry
 	store            any
@@ -46,11 +119,12 @@ type Runtime struct {
 
 	usageSink TokenUsageSink
 
-	// defaultChatModelName matches server OPENAI_MODEL / ARK_MODEL when agent has no per-agent llm_model.
+	// defaultChatModelName used for token usage records when agent has no per-agent llm_model.
 	defaultChatModelName string
 
-	// groupCoordinator provides group capability discovery and coordination.
-	groupCoordinator *GroupCoordinator
+	// Optional RAG context provider (IM / scheduler paths that bypass ChatService).
+	kbContextProvider func(ctx context.Context, agentID int64, userText string) string
+
 }
 
 func NewRuntime() *Runtime {
@@ -74,6 +148,33 @@ func NewRuntimeWithSkill(chatModel model.ToolCallingChatModel, mcpClient *mcp.Cl
 		r.auditLogger = NewAuditLogger(as)
 	}
 	return r
+}
+
+func (r *Runtime) SetModelProvider(p ModelProvider) {
+	r.modelProvider = p
+	r.chatModel = &resolvableModel{
+		defaultModel: r.chatModel,
+		provider:     p,
+		agents:       r.GetAgent,
+	}
+}
+
+func (r *Runtime) SetKBContextProvider(fn func(ctx context.Context, agentID int64, userText string) string) {
+	r.kbContextProvider = fn
+}
+
+func (r *Runtime) mergeKBContext(ctx context.Context, agentID int64, userText, memContext string) string {
+	if r.kbContextProvider == nil {
+		return memContext
+	}
+	kbContext := r.kbContextProvider(ctx, agentID, userText)
+	if kbContext == "" {
+		return memContext
+	}
+	if memContext != "" {
+		return kbContext + "\n\n" + memContext
+	}
+	return kbContext
 }
 
 func (r *Runtime) AuditLogger() *AuditLogger {
@@ -151,18 +252,6 @@ func (r *Runtime) GetAgentByName(name string) (*schema.AgentWithRuntime, bool) {
 	return agent, ok
 }
 
-func (r *Runtime) SetGroupCoordinator(coordinator *GroupCoordinator) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.groupCoordinator = coordinator
-}
-
-func (r *Runtime) GetGroupCoordinator() *GroupCoordinator {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.groupCoordinator
-}
-
 func (r *Runtime) ListAgents() []*schema.AgentWithRuntime {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -197,6 +286,7 @@ func (r *Runtime) StopStream(sessionID string) {
 }
 
 func (r *Runtime) ChatWithMemoryContext(ctx context.Context, agentID int64, message, imageBase64, imageMime string, memContext string, sessionID, auditUserID string, historyMsgs []*einoschema.Message) (string, error) {
+	ctx = contextWithAgentID(ctx, agentID)
 	agent, ok := r.GetAgent(agentID)
 	if !ok {
 		return "", fmt.Errorf("agent not found: %d", agentID)
@@ -212,6 +302,7 @@ func (r *Runtime) ChatWithMemoryContext(ctx context.Context, agentID int64, mess
 	}
 
 	historyWithMemory := historyMsgs
+	memContext = r.mergeKBContext(ctx, agentID, message, memContext)
 	if memContext != "" {
 		// 将记忆作为 user 消息注入，而非拼接到 system prompt
 		// 防止用户注入的恶意指令获得 system 权限
@@ -230,6 +321,7 @@ func (r *Runtime) ChatWithMemoryContext(ctx context.Context, agentID int64, mess
 // ChatWithMemoryContextSchedule is like ChatWithMemoryContext but returns ReAct step payloads for agent_memory.extra.react_steps
 // (scheduled runs: chat UI can show thinking cards). Callers should send only the reply string to external clients (e.g. Lark).
 func (r *Runtime) ChatWithMemoryContextSchedule(ctx context.Context, agentID int64, message, imageBase64, imageMime string, memContext string, sessionID, auditUserID string, historyMsgs []*einoschema.Message) (string, []map[string]any, error) {
+	ctx = contextWithAgentID(ctx, agentID)
 	agent, ok := r.GetAgent(agentID)
 	if !ok {
 		return "", nil, fmt.Errorf("agent not found: %d", agentID)
@@ -243,6 +335,7 @@ func (r *Runtime) ChatWithMemoryContextSchedule(ctx context.Context, agentID int
 		}
 	}
 	historyWithMemory := historyMsgs
+	memContext = r.mergeKBContext(ctx, agentID, message, memContext)
 	if memContext != "" {
 		historyWithMemory = append([]*einoschema.Message{
 			{Role: einoschema.User, Content: "[记忆上下文]\n" + memContext},
@@ -264,6 +357,7 @@ func (r *Runtime) ChatWithMemoryContextSchedule(ctx context.Context, agentID int
 }
 
 func (r *Runtime) ChatWithUserProfile(ctx context.Context, agentID int64, message, imageBase64, imageMime, userProfile string, sessionID, auditUserID string, historyMsgs []*einoschema.Message) (string, error) {
+	ctx = contextWithAgentID(ctx, agentID)
 	agent, ok := r.GetAgent(agentID)
 	if !ok {
 		return "", fmt.Errorf("agent not found: %d", agentID)
@@ -416,6 +510,7 @@ func (r *Runtime) openChatStream(
 }
 
 func (r *Runtime) ChatStreamWithUserProfile(ctx context.Context, agentID int64, message string, visionParts []VisionPart, userProfile string, historyMsgs []*einoschema.Message, stopCh <-chan struct{}, sessionID, auditUserID, clientType string) (io.ReadCloser, error) {
+	ctx = contextWithAgentID(ctx, agentID)
 	agent, ok := r.GetAgent(agentID)
 	if !ok {
 		return nil, fmt.Errorf("agent not found: %d", agentID)
@@ -445,7 +540,8 @@ func (r *Runtime) ChatStreamWithUserProfile(ctx context.Context, agentID int64, 
 	return r.openChatStream(ctx, agent, systemPrompt, message, historyMsgs, chatTools, clientType, visionParts, sessionID, auditUserID, stopCh)
 }
 
-func (r *Runtime) ChatStreamWithMemoryContext(ctx context.Context, agentID int64, message string, visionParts []VisionPart, memContext string, historyMsgs []*einoschema.Message, stopCh <-chan struct{}, sessionID, auditUserID, clientType string, groupPeers *GroupPeerContext) (io.ReadCloser, error) {
+func (r *Runtime) ChatStreamWithMemoryContext(ctx context.Context, agentID int64, message string, visionParts []VisionPart, memContext string, historyMsgs []*einoschema.Message, stopCh <-chan struct{}, sessionID, auditUserID, clientType string) (io.ReadCloser, error) {
+	ctx = contextWithAgentID(ctx, agentID)
 	agent, ok := r.GetAgent(agentID)
 	if !ok {
 		return nil, fmt.Errorf("agent not found: %d", agentID)
@@ -463,30 +559,14 @@ func (r *Runtime) ChatStreamWithMemoryContext(ctx context.Context, agentID int64
 		}
 	}
 	if memContext != "" {
-		systemPrompt = memContext + "\n\n" + systemPrompt
-	}
-	if groupPeers != nil && len(groupPeers.PeerAgentIDs) >= 2 {
-		if hint := r.buildGroupPeerSystemHint(groupPeers); hint != "" {
-			systemPrompt = hint + "\n\n" + systemPrompt
-		}
-		// Add group capability hint for multi-agent coordination
-		if r.groupCoordinator != nil {
-			if capHint := r.groupCoordinator.BuildGroupCapabilityHint(ctx, groupPeers.GroupID, groupPeers.CallerAgentID); capHint != "" {
-				systemPrompt = systemPrompt + "\n\n" + capHint
-			}
-		}
-		// Trailing reminder: models often weight the end of the system prompt.
-		systemPrompt += "\n\n[Group peer reminder] To message another agent in this group, call tool `" + toolGroupSendMessage + "` with fields target_agent_id and message. Do not claim you only have email/DingTalk/HTTP; this tool is the supported path."
+		systemPrompt = r.mergeKBContext(ctx, agentID, message, memContext) + "\n\n" + systemPrompt
+	} else if kbOnly := r.mergeKBContext(ctx, agentID, message, ""); kbOnly != "" {
+		systemPrompt = kbOnly + "\n\n" + systemPrompt
 	}
 
 	chatTools, err := r.allToolsForAgent(agent)
 	if err != nil {
 		return nil, err
-	}
-	if groupPeers != nil && len(groupPeers.PeerAgentIDs) >= 2 {
-		if t := r.newGroupPeerMessageTool(groupPeers, sessionID, auditUserID, clientType); t != nil {
-			chatTools = append(chatTools, t)
-		}
 	}
 	chatTools = r.wrapToolsWithAudit(agent, sessionID, auditUserID, chatTools)
 
@@ -639,9 +719,20 @@ func (r *Runtime) runAgent(ctx context.Context, agent *schema.AgentWithRuntime, 
 	ctx = r.ensureUsageTracking(ctx, agent, auditUserID)
 	defer r.flushUsageSession(ctx)
 
+	if agent.RuntimeProfile != nil && len(agent.RuntimeProfile.KBIDs) > 0 {
+		logger.Info("knowledge bases bound for agent",
+			"agent_id", agent.ID,
+			"kb_ids", agent.RuntimeProfile.KBIDs,
+			"kb_retrieval_enabled", r.kbContextProvider != nil,
+		)
+	}
+
 	tools, err := r.allToolsForAgent(agent)
 	if err != nil {
 		return "", nil, err
+	}
+	if _, ok := imoutbound.ScopeFromContext(ctx); ok {
+		tools = append(tools, skills.NewIMOutboundFileTool(imoutbound.GlobalStore()))
 	}
 	tools = r.wrapToolsWithAudit(agent, sessionID, auditUserID, tools)
 
@@ -1197,6 +1288,7 @@ func (r *Runtime) ResumePlanExecuteStream(
 	auditUserID string,
 	clientType string,
 ) (io.ReadCloser, error) {
+	ctx = contextWithAgentID(ctx, agent.ID)
 	ctx = r.ensureUsageTracking(ctx, agent, auditUserID)
 
 	state, msgs, err := r.clientToolMgr.ResumeState(callID, result, toolErr)

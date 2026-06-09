@@ -17,7 +17,7 @@ const oauthStateTTLSeconds = 600
 // GenerateOAuthState builds a signed nonce.timestamp.sig token (same idea as aiops FastAPI).
 func GenerateOAuthState(secret string) string {
 	if secret == "" {
-		secret = "sya_oauth_state_fallback"
+		secret = "aiops_oauth_state_fallback"
 	}
 	b := make([]byte, 18)
 	_, _ = rand.Read(b)
@@ -62,7 +62,7 @@ func ValidateOAuthState(secret, cookieState, queryState string) error {
 		return fmt.Errorf("invalid OAuth state")
 	}
 	if secret == "" {
-		secret = "sya_oauth_state_fallback"
+		secret = "aiops_oauth_state_fallback"
 	}
 	payload := nonce + "." + tsText
 	expected := base64.RawURLEncoding.EncodeToString(hmacSHA256(secret, payload))

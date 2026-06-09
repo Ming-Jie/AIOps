@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/fisk086/sya/internal/mcp"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/mcp"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 // ErrMCPDiscoveryNeedsTarget is returned when sync is asked to discover tools remotely

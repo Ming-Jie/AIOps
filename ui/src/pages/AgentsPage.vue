@@ -31,6 +31,11 @@
           <q-badge color="green" :label="props.row.mcp_config_ids?.length ?? 0" />
         </q-td>
       </template>
+      <template #body-cell-kb_count="props">
+        <q-td :props="props">
+          <q-badge color="teal" :label="props.row.kb_ids?.length ?? 0" />
+        </q-td>
+      </template>
       <template #body-cell-is_active="props">
         <q-td :props="props">
           <q-badge :color="props.row.is_active !== false ? 'positive' : 'grey'" :label="props.row.is_active !== false ? t('roleEnabled') : t('roleDisabled')" />
@@ -57,7 +62,9 @@
           <q-tabs v-model="agentTab" dense align="left" class="text-grey" active-color="primary" indicator-color="primary">
             <q-tab name="basic" :label="t('basicInfo')" />
             <q-tab name="runtime" :label="t('runtimeConfig')" />
-            <q-tab name="capabilities" :label="t('capabilities')" />
+            <q-tab name="capabilities" :label="t('skills')" />
+            <q-tab name="mcp" :label="t('mcp')" />
+            <q-tab name="knowledge" :label="t('knowledge')" />
             <q-tab name="im" :label="t('imBot')" />
           </q-tabs>
 
@@ -82,7 +89,17 @@
             <q-tab-panel name="runtime">
               <div class="row q-col-gutter-md">
                 <div class="col-6">
-                  <q-input v-model="runtimeProfile.llm_model" :label="t('llmModel')" outlined dense />
+                  <q-select
+                    v-model="runtimeProfile.model_config_id"
+                    :options="modelConfigOptions"
+                    :label="t('modelConfigSelect')"
+                    outlined
+                    dense
+                    emit-value
+                    map-options
+                    clearable
+                    :hint="t('modelConfigHint')"
+                  />
                 </div>
                 <div class="col-6">
                   <q-input v-model.number="runtimeProfile.temperature" :label="t('temperature')" outlined dense type="number" step="0.1" min="0" max="2" />
@@ -173,6 +190,7 @@
                 </div>
                 <div class="col-6">
                   <q-checkbox v-model="runtimeProfile.memory_enabled" :label="t('memoryEnabled')" />
+                  <div class="text-caption text-grey-7 q-mt-xs">{{ t('memoryEnabledHint') }}</div>
                 </div>
               </div>
             </q-tab-panel>
@@ -258,26 +276,49 @@
                   </div>
                 </q-scroll-area>
               </div>
+            </q-tab-panel>
 
-              <q-separator class="q-my-md" />
+            <!-- MCP Tab -->
+            <q-tab-panel name="mcp">
+              <div class="text-subtitle2 q-mb-sm text-secondary">{{ t('bindMCP') }} ({{ selectedMcpConfigIds.length }})</div>
+              <div v-if="availableMcpConfigs.length === 0" class="text-caption text-grey q-pa-md text-center">
+                <q-icon name="info" size="sm" /> {{ t('agentNoMcpHint') }}
+              </div>
+              <div v-for="mcp in availableMcpConfigs" :key="mcp.id" class="q-mb-sm">
+                <q-checkbox
+                  v-model="selectedMcpConfigIds"
+                  :val="mcp.id"
+                  color="secondary"
+                >
+                  <template #default>
+                    <div class="text-body2">{{ mcp.name }}</div>
+                    <div class="text-caption text-grey">{{ mcp.description || mcp.endpoint || t('noneDescription') }}</div>
+                  </template>
+                </q-checkbox>
+              </div>
+            </q-tab-panel>
 
-              <div>
-                <div class="text-subtitle2 q-mb-sm text-secondary">{{ t('bindMCP') }} ({{ selectedMcpConfigIds.length }})</div>
-                <div v-if="availableMcpConfigs.length === 0" class="text-caption text-grey q-pa-md text-center">
-                  <q-icon name="info" size="sm" /> {{ t('agentNoMcpHint') }}
-                </div>
-                <div v-for="mcp in availableMcpConfigs" :key="mcp.id" class="q-mb-sm">
-                  <q-checkbox
-                    v-model="selectedMcpConfigIds"
-                    :val="mcp.id"
-                    color="secondary"
-                  >
-                    <template #default>
-                      <div class="text-body2">{{ mcp.name }}</div>
-                      <div class="text-caption text-grey">{{ mcp.description || mcp.endpoint || t('noneDescription') }}</div>
-                    </template>
-                  </q-checkbox>
-                </div>
+            <!-- Knowledge Base Tab -->
+            <q-tab-panel name="knowledge">
+              <div class="text-subtitle2 q-mb-sm text-teal">{{ t('bindKB') }} ({{ selectedKbIds.length }})</div>
+              <div class="text-caption text-grey q-mb-md">{{ t('bindKBHint') }}</div>
+              <div v-if="availableKbs.length === 0" class="text-caption text-grey q-pa-md text-center">
+                <q-icon name="info" size="sm" /> {{ t('agentNoKbHint') }}
+              </div>
+              <div v-for="kb in availableKbs" :key="kb.id" class="q-mb-sm">
+                <q-checkbox
+                  v-model="selectedKbIds"
+                  :val="kb.id"
+                  color="teal"
+                >
+                  <template #default>
+                    <div class="text-body2">
+                      {{ kb.name }}
+                      <q-badge :color="kb.visibility === 'public' ? 'blue' : 'grey'" :label="kb.visibility === 'public' ? t('kbPublic') : t('kbPrivate')" class="q-ml-xs" />
+                    </div>
+                    <div class="text-caption text-grey">{{ kb.description || t('noneDescription') }}</div>
+                  </template>
+                </q-checkbox>
               </div>
             </q-tab-panel>
 
@@ -316,8 +357,36 @@
                   :label="t('imTelegramChatId')"
                   outlined
                   dense
+                  :hint="t('imTelegramChatIdHint')"
                   class="q-mb-md"
                 />
+
+                <q-banner
+                  v-if="runtimeProfile.im_enabled === 'telegram'"
+                  class="bg-blue-1 text-blue-10 q-mb-md"
+                  rounded
+                  dense
+                >
+                  {{ t('imTelegramPollingHint') }}
+                </q-banner>
+
+                <q-banner
+                  v-if="runtimeProfile.im_enabled === 'dingtalk'"
+                  class="bg-blue-1 text-blue-10 q-mb-md"
+                  rounded
+                  dense
+                >
+                  {{ t('imDingtalkStreamHint') }}
+                </q-banner>
+
+                <q-banner
+                  v-if="runtimeProfile.im_enabled === 'wecom'"
+                  class="bg-amber-1 text-amber-10 q-mb-md"
+                  rounded
+                  dense
+                >
+                  {{ t('imWecomNotifyOnlyHint') }}
+                </q-banner>
 
                 <q-input
                   v-if="runtimeProfile.im_enabled === 'lark'"
@@ -329,6 +398,22 @@
                   :hint="t('imLarkOpenDomainHint')"
                   class="q-mb-md"
                 />
+
+                <div v-if="runtimeProfile.im_enabled === 'lark'" class="q-mb-md">
+                  <q-btn
+                    outline
+                    color="primary"
+                    icon="qr_code_2"
+                    :label="t('imLarkQrCreateApp')"
+                    :disable="!isEdit || editId < 1"
+                    @click="larkQrDialogOpen = true"
+                  />
+                  <div v-if="!isEdit || editId < 1" class="text-caption text-grey-7 q-mt-xs">
+                    {{ t('imLarkQrNeedSavedAgent') }}
+                  </div>
+                </div>
+
+                <LarkPermissionGuide v-if="runtimeProfile.im_enabled === 'lark'" class="q-mb-md" />
 
                 <template v-if="imShowsAppCredentials">
                   <q-input
@@ -351,26 +436,20 @@
                   />
                 </template>
 
-                <q-input
+                <q-select
                   v-if="runtimeProfile.im_enabled === 'lark'"
-                  v-model="runtimeProfile.im_config.verification_token"
-                  :label="t('imLarkVerificationToken')"
+                  v-model="runtimeProfile.im_config.allowed_users"
+                  :label="t('imAllowedUsersLabel')"
                   outlined
                   dense
-                  :hint="t('imLarkVerificationTokenHint')"
+                  multiple
+                  use-input
+                  use-chips
+                  hide-dropdown-icon
+                  input-debounce="0"
+                  :hint="t('imAllowedUsersHint')"
                   class="q-mb-md"
-                />
-
-                <q-input
-                  v-if="runtimeProfile.im_enabled === 'lark'"
-                  v-model="runtimeProfile.im_config.encrypt_key"
-                  :label="t('imLarkEncryptKey')"
-                  outlined
-                  dense
-                  type="password"
-                  autocomplete="new-password"
-                  :hint="t('imLarkEncryptKeyHint')"
-                  class="q-mb-md"
+                  @new-value="addAllowedUserEntry"
                 />
 
                 <q-input
@@ -413,16 +492,40 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <LarkRegisterAppDialog
+      v-model:open="larkQrDialogOpen"
+      :agent-id="editId > 0 ? editId : null"
+      :app-name="form.name ? `${form.name} IM` : undefined"
+      @completed="onLarkQrDialogCompleted"
+      @failed="onLarkQrFailed"
+    />
   </q-page>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useQuasar } from 'quasar'
 import type { Skill } from 'src/api/types'
+import LarkRegisterAppDialog from 'src/components/LarkRegisterAppDialog.vue'
+import LarkPermissionGuide from 'src/components/LarkPermissionGuide.vue'
 import { useAgentsPage } from './useAgentsPage'
 defineOptions({ name: 'AgentsPage' })
 
+const $q = useQuasar()
 const agentTab = ref('basic')
+const larkQrDialogOpen = ref(false)
+
+function warnIfChatID (id: string) {
+  if (id.startsWith('oc_')) {
+    $q.notify({ type: 'warning', message: t('imAllowedUsersOcWarn'), timeout: 8000 })
+  }
+}
+
+function onLarkQrDialogCompleted (sess: Parameters<typeof onLarkQrCompleted>[0]) {
+  agentTab.value = 'im'
+  void onLarkQrCompleted(sess)
+}
 const skillSearch = ref('')
 
 const agentsPage = useAgentsPage()
@@ -438,17 +541,23 @@ const {
   goChat,
   dialogOpen,
   isEdit,
+  editId,
   form,
   runtimeProfile,
   saving,
   openDialog,
   saveAgent,
   confirmDelete,
+  onLarkQrCompleted,
+  onLarkQrFailed,
   availableSkills,
   availableMcpConfigs,
+  availableKbs,
   availableUsers,
+  availableModelConfigs,
   selectedSkillIds,
   selectedMcpConfigIds,
+  selectedKbIds,
   onSystemPromptPaste
 } = agentsPage
 
@@ -463,6 +572,35 @@ const approvalModeOptions = computed(() => [
   { label: t('approvalModeHighDetail'), value: 'high_and_above' },
   { label: t('approvalModeAll'), value: 'all' }
 ])
+
+function addAllowedUserEntry (
+  val: string,
+  done: (item?: string, mode?: 'add' | 'add-unique' | 'toggle') => void
+) {
+  const parts = val.split(/[,，;；\s]+/).map(s => s.trim()).filter(Boolean)
+  if (parts.length === 0) {
+    done()
+    return
+  }
+  if (parts.length === 1) {
+    warnIfChatID(parts[0])
+    done(parts[0], 'add-unique')
+    return
+  }
+  for (const p of parts) warnIfChatID(p)
+  const merged = new Set([...runtimeProfile.im_config.allowed_users, ...parts])
+  runtimeProfile.im_config.allowed_users = [...merged]
+  done()
+}
+
+const modelConfigOptions = computed(() =>
+  availableModelConfigs.value
+    .filter(mc => mc.is_active !== false)
+    .map(mc => ({
+      label: `${mc.name} (${mc.provider}/${mc.model})`,
+      value: mc.id
+    }))
+)
 
 const imEnabledOptions = computed(() => [
   { label: t('imEnabledOptionsDisabled'), value: 'disabled' },
@@ -612,7 +750,7 @@ const getSkillRiskLabel = (skill: Skill): string => {
 
 <style scoped>
 .agent-edit-dialog-card {
-  width: min(92vw, 560px);
+  width: min(92vw, 640px);
   max-width: 92vw;
 }
 .skill-card {

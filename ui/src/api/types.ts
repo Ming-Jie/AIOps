@@ -9,14 +9,6 @@ export interface UserResponse {
   user_roles?: { id: number; role_id: number; role?: { name: string } }[]
 }
 
-export interface TokenResponse {
-  access_token: string
-  refresh_token: string
-  token_type: string
-  expires_in: number
-  user: UserResponse
-}
-
 export interface APIResponse<T = unknown> {
   code: number
   message: string
@@ -92,6 +84,7 @@ export interface Agent {
   updated_at?: string
   skill_ids?: string[]
   mcp_config_ids?: number[]
+  kb_ids?: number[]
 }
 
 export interface RuntimeProfile {
@@ -102,11 +95,13 @@ export interface RuntimeProfile {
   backstory?: string
   system_prompt?: string
   llm_model?: string
+  model_config_id?: number
   temperature: number
   stream_enabled: boolean
   memory_enabled: boolean
   skill_ids?: string[]
   mcp_config_ids?: number[]
+  kb_ids?: number[]
   execution_mode?: string
   max_iterations?: number
   plan_prompt?: string
@@ -142,12 +137,13 @@ export interface ChatSession {
   session_id: string
   agent_id: number
   user_id?: string
-  /** 群聊线程时由后端写入，用于 URL ?session= 恢复 */
-  group_id?: number
   /** 展示名：首条用户消息摘要或用户重命名 */
   title?: string
   created_at: string
   updated_at: string
+  /** IM 机器人会话：lark | telegram */
+  im_channel?: string
+  im_user_id?: string
 }
 
 /** ReAct / ADK 步骤快照（主聊天区内联展示；服务端历史消息通常无此字段） */
@@ -573,27 +569,93 @@ export interface ScheduleExecution {
   finished_at?: string
 }
 
-export interface AgentMember {
-  agent_id: number
-  agent_name?: string
-}
-
-export interface ChatGroup {
+// Model config (UI-managed LLM provider configs)
+export interface ModelConfig {
   id: number
   name: string
-  members: AgentMember[]
-  created_by?: string
+  provider: string
+  model: string
+  base_url?: string
+  api_key?: string
+  config?: Record<string, unknown>
+  is_active: boolean
+  purpose: string
   created_at: string
-  /** 最近活跃时间：后端取该群关联会话的 max(updated_at)，无会话时同 created_at */
-  updated_at?: string
+  updated_at: string
 }
 
-export interface CreateGroupRequest {
+export interface CreateModelConfigRequest {
   name: string
-  agent_ids: number[]
+  provider: string
+  model: string
+  base_url?: string
+  api_key?: string
+  config?: Record<string, unknown>
+  is_active?: boolean
+  purpose?: string
 }
 
-export interface UpdateGroupRequest {
+export interface UpdateModelConfigRequest {
   name?: string
-  agent_ids?: number[]
+  provider?: string
+  model?: string
+  base_url?: string
+  api_key?: string
+  config?: Record<string, unknown>
+  is_active?: boolean
+  purpose?: string
+}
+
+// Knowledge base (OpenViking backend)
+export interface KnowledgeBase {
+  id: number
+  owner_id: number
+  name: string
+  description: string
+  /** 'private' | 'public' */
+  visibility: string
+  viking_path: string
+  doc_count: number
+  /** true if the current user is the creator of this KB */
+  is_owner: boolean
+  /** true if the current user can manage this KB (owner or admin) */
+  can_manage: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Document status: pending | indexing | indexed | failed */
+export interface KBDocument {
+  id: number
+  kb_id: number
+  owner_id: number
+  filename: string
+  viking_uri: string
+  size: number
+  status: string
+  error?: string
+  task_id?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface KBImportURLFailure {
+  url: string
+  message: string
+}
+
+export interface KBImportURLsResult {
+  imported: KBDocument[]
+  failed: KBImportURLFailure[]
+}
+
+export interface KBSearchHit {
+  uri: string
+  abstract: string
+  overview?: string
+  /** Hydrated raw chunk text from content/read (preferred over abstract). */
+  content?: string
+  score: number
+  context_type: string
+  level: number
 }

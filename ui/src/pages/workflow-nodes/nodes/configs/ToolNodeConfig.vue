@@ -22,13 +22,21 @@
         :placeholder="t('wfToolNamePh')"
         class="config-input"
         @filter="filterTools"
-        @update:model-value="patchConfig('tool_name', $event || '')"
+        @update:model-value="onToolName"
         @new-value="createToolValue"
       />
     </div>
+    <div v-if="strField('tool_name')" class="text-caption text-positive q-mb-sm">
+      {{ t('wfCatalogSchemaApplied') }}
+    </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfToolInput') }}</div>
-      <q-input :model-value="strField('tool_input')" outlined dense type="textarea" rows="5" :placeholder="t('wfToolInputPh')" class="config-input" @update:model-value="patchConfig('tool_input', $event)" />
+      <WorkflowVariableField
+        :model-value="strField('tool_input')"
+        :rows="5"
+        :placeholder="t('wfToolInputPh')"
+        @update:model-value="patchConfig('tool_input', $event)"
+      />
     </div>
   </div>
 </template>
@@ -36,14 +44,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
 import { useToolNodeNameOptions, type ToolNameOption } from './useToolNodeConfig'
+import { defaultToolInputSchema } from 'src/lib/schemaCatalog'
 
 const props = defineProps<{
   nodeLabel: string
   config: Record<string, unknown>
 }>()
 
-const emit = defineEmits(['update:label', 'update:config'])
+const emit = defineEmits<{
+  'update:label': [v: string]
+  'update:config': [v: Record<string, unknown>]
+  'update:inputSchema': [v: Record<string, unknown> | null]
+}>()
 
 const { t } = useI18n()
 const { loading: loadingTools, toolOptions: allToolOptions } = useToolNodeNameOptions()
@@ -56,6 +70,20 @@ function patchConfig (key: string, value: unknown) {
 function strField (key: string): string {
   const v = props.config[key]
   return v == null ? '' : String(v)
+}
+
+function applyToolSchema (toolName: string) {
+  if (!toolName.trim()) {
+    emit('update:inputSchema', null)
+    return
+  }
+  emit('update:inputSchema', defaultToolInputSchema(toolName.trim()))
+}
+
+function onToolName (val: string | null) {
+  const name = val ? String(val) : ''
+  patchConfig('tool_name', name)
+  applyToolSchema(name)
 }
 
 function filterTools (val: string, update: (fn: () => void) => void) {
@@ -72,7 +100,7 @@ function createToolValue (val: string, done: (value: string, mode?: 'add' | 'add
   const v = val.trim()
   if (!v) return
   done(v, 'add-unique')
-  patchConfig('tool_name', v)
+  onToolName(v)
 }
 
 const nodeLabel = computed({

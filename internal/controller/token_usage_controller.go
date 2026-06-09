@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/fisk086/sya/internal/auth"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
+	"github.com/fisk086/aiops/internal/auth"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 )

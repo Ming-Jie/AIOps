@@ -101,6 +101,15 @@
           <div class="wf-canvas" ref="canvasRef">
             <div class="canvas-toolbar">
               <q-btn-group flat>
+                <q-btn flat dense icon="undo" :disable="!canUndo" @click="handleUndo">
+                  <q-tooltip>{{ t('wfUndo') }}</q-tooltip>
+                </q-btn>
+                <q-btn flat dense icon="redo" :disable="!canRedo" @click="handleRedo">
+                  <q-tooltip>{{ t('wfRedo') }}</q-tooltip>
+                </q-btn>
+              </q-btn-group>
+              <q-separator vertical inset class="q-mx-sm" />
+              <q-btn-group flat>
                 <q-btn flat dense icon="fit_screen" @click="fitView">
                   <q-tooltip>{{ t('wfFitView') }}</q-tooltip>
                 </q-btn>
@@ -120,6 +129,16 @@
               <q-btn
                 flat
                 dense
+                icon="fact_check"
+                :disable="!currentWorkflow"
+                @click="checklistDialogOpen = true"
+              >
+                <q-badge v-if="checklistErrors > 0" color="negative" floating>{{ checklistErrors }}</q-badge>
+                <q-tooltip>{{ t('wfChecklist') }}</q-tooltip>
+              </q-btn>
+              <q-btn
+                flat
+                dense
                 icon="history"
                 :disable="!currentWorkflow"
                 @click="historyDialogOpen = true"
@@ -136,6 +155,14 @@
               >
                 <q-tooltip>{{ t('wfExecute') }}</q-tooltip>
               </q-btn>
+              <q-separator vertical inset class="q-mx-sm" />
+              <div v-if="saveStatus !== 'idle'" class="autosave-status" :class="`autosave-status--${saveStatus}`">
+                <q-icon v-if="saveStatus === 'dirty'" name="edit_note" size="14px" />
+                <q-icon v-else-if="saveStatus === 'saving'" name="sync" size="14px" class="spin" />
+                <q-icon v-else-if="saveStatus === 'saved'" name="check" size="14px" />
+                <q-icon v-else-if="saveStatus === 'error'" name="warning" size="14px" />
+                <span class="autosave-text">{{ saveStatusText }}</span>
+              </div>
               <q-separator vertical inset class="q-mx-sm" />
               <q-btn
                 flat
@@ -228,215 +255,122 @@
               <q-btn flat dense round icon="close" size="sm" @click="onPaneClick" />
             </div>
 
-            <div class="config-section">
-              <div class="config-section-title">
-                <q-icon name="tune" size="16px" class="q-mr-xs" />
-                {{ t('wfNodeParameters') }}
-              </div>
-              <component
-                v-if="selectedNodeId && registryConfigComponent"
-                :key="`${selectedNodeId}-${nodeType}`"
-                :is="registryConfigComponent"
-                :node-label="nodeLabel"
-                :config="registryConfigForEditor"
-                :nodes="nodes"
-                @update:label="onRegistryLabel"
-                @update:config="onRegistryConfig"
-              />
-              <div v-else-if="selectedNodeId" class="text-grey q-pa-md text-caption">
-                {{ t('wfUnknownNodeType') }}: {{ nodeType }}
-              </div>
-            </div>
+            <q-tabs v-model="inspectorTab" dense align="justify" class="inspector-tabs" active-color="primary">
+              <q-tab name="config" :label="t('wfInspectorConfig')" />
+              <q-tab name="lastRun" :label="t('wfInspectorLastRun')" />
+            </q-tabs>
 
-            <q-separator class="q-my-md" />
-
-            <div v-if="nodeType !== 'start'" class="config-section">
-              <div class="config-section-title">
-                <q-icon name="link" size="16px" class="q-mr-xs" />
-                {{ t('wfInputMapping') }}
-                <span class="config-hint">{{ t('wfInputMappingHint') }}</span>
-                <q-space />
-                <q-btn
-                  flat
-                  dense
-                  size="sm"
-                  color="primary"
-                  icon="schema"
-                  :label="t('wfSyncFromSchema')"
-                  :disable="inputSchemaFields.length === 0"
-                  @click.stop="syncInputMappingsWithSchema"
-                />
-                <VariableInsertDropdown
-                  :upstream-nodes="upstreamNodeOptions"
-                  :node-output-fields="nodeOutputFields"
-                  @insert="onVariableInsert"
-                />
+            <div v-show="inspectorTab === 'lastRun'" class="inspector-panel inspector-last-run">
+              <div v-if="!executionResult" class="text-grey text-caption q-pa-md">
+                {{ t('wfLastRunEmpty') }}
               </div>
-              <q-banner v-if="inputSchemaFields.length > 0" dense class="mapping-schema-banner">
-                {{ t('wfInputMappingSchemaHint', { count: inputSchemaFields.length }) }}
-              </q-banner>
-              <div class="input-mapping-editor">
-                <div v-if="inputMappings.length === 0" class="mapping-empty">
-                  {{ upstreamNodeOptions.length > 0 ? t('wfMappingEmpty') : t('wfMappingNoUpstream') }}
-                </div>
-                <div
-                  v-for="(mapping, index) in inputMappings"
-                  :key="mapping.id"
-                  class="mapping-card"
-                  :class="{ 'mapping-card--required': mapping.schemaRequired }"
-                >
-                  <div class="mapping-card-head">
-                    <div class="mapping-target-info">
-                      <div v-if="mapping.schemaField" class="mapping-target-static">
-                        <span class="mapping-target-name">{{ mapping.target }}</span>
-                        <q-badge v-if="mapping.schemaRequired" color="negative" outline :label="t('wfRequired')" />
-                        <q-badge color="grey-7" outline :label="mapping.schemaType || 'any'" />
-                      </div>
-                      <q-input
-                        v-else
-                        v-model="mapping.target"
-                        outlined dense
-                        :placeholder="t('wfMappingTargetPh')"
-                        class="mapping-target"
-                      />
-                      <div v-if="mapping.schemaDescription" class="mapping-field-desc">
-                        {{ mapping.schemaDescription }}
-                      </div>
-                    </div>
-                    <q-space />
-                    <q-btn
-                      type="button"
-                      flat
-                      dense
-                      round
-                      :icon="mapping.mode === 'expr' ? 'account_tree' : 'edit_note'"
-                      size="sm"
-                      color="primary"
-                      @click.stop="toggleMappingMode(index)"
-                    >
-                      <q-tooltip>{{ mapping.mode === 'expr' ? t('wfUseFieldPicker') : t('wfUseExpression') }}</q-tooltip>
-                    </q-btn>
-                    <q-btn
-                      type="button"
-                      flat
-                      dense
-                      round
-                      icon="delete"
-                      size="sm"
-                      color="negative"
-                      :disable="mapping.schemaRequired"
-                      @click.stop="removeMapping(index)"
-                    />
-                  </div>
-
-                  <div v-if="mapping.mode !== 'expr'" class="mapping-source-grid">
-                    <q-select
-                      v-model="mapping.sourceNode"
-                      :options="upstreamNodeOptions"
-                      outlined dense
-                      emit-value
-                      map-options
-                      :placeholder="t('wfMappingNodePh')"
-                      class="mapping-node-select"
-                      @update:model-value="onSourceNodeChange(index)"
-                    />
-                    <q-icon name="arrow_forward" size="18px" class="mapping-arrow" />
-                    <q-select
-                      v-model="mapping.sourceField"
-                      :options="getFieldOptions(mapping.sourceNode)"
-                      outlined dense
-                      emit-value
-                      map-options
-                      :placeholder="t('wfMappingFieldPh')"
-                      class="mapping-field-select"
-                      :disable="!mapping.sourceNode"
-                    />
-                  </div>
-                  <q-input
-                    v-else
-                    v-model="mapping.expression"
-                    outlined
+              <div v-else-if="!selectedNodeId" class="text-grey text-caption q-pa-md">
+                {{ t('wfLastRunSelectNode') }}
+              </div>
+              <div v-else-if="!selectedNodeLastRun" class="text-grey text-caption q-pa-md">
+                {{ t('wfLastRunNoData') }}
+              </div>
+              <template v-else>
+                <div class="config-section">
+                  <q-banner
                     dense
-                    :placeholder="t('wfMappingExpressionPh')"
-                    class="mapping-expression"
-                  />
-                </div>
-                <q-btn type="button" flat dense color="primary" :label="t('wfAddMapping')" size="sm" class="q-mt-xs" icon="add" @click.stop="addMapping" />
-              </div>
-            </div>
+                    :class="selectedNodeLastRun.error ? 'bg-red-1' : 'bg-green-1'"
+                    class="q-mb-md"
+                  >
+                    <template #avatar>
+                      <q-icon
+                        :name="selectedNodeLastRun.error ? 'error' : 'check_circle'"
+                        :color="selectedNodeLastRun.error ? 'negative' : 'positive'"
+                      />
+                    </template>
+                    <div>{{ t('wfLastRunStatus') }}: {{ selectedNodeLastRun.error ? t('wfExecuteFailed') : t('wfExecuteSuccess') }}</div>
+                    <div v-if="selectedNodeLastRun.duration_ms != null" class="text-caption">
+                      {{ t('wfDuration') }}: {{ selectedNodeLastRun.duration_ms }}ms
+                    </div>
+                  </q-banner>
 
-            <div class="config-section">
-              <div class="config-section-title">
-                <q-icon name="input" size="16px" class="q-mr-xs" />
-                {{ t('wfInputSchema') }}
-                <q-btn flat dense size="sm" color="info" :label="t('wfSchemaExample')" icon="help_outline" @click="showSchemaExample" class="q-ml-sm" />
-              </div>
-              <div class="schema-editor">
-                <q-input
-                  v-model="inputSchemaJson"
-                  outlined
-                  dense
-                  type="textarea"
-                  rows="4"
-                  placeholder="{&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {}}"
-                  class="config-input"
-                  :error="!!inputSchemaError"
-                  :error-message="inputSchemaError"
-                  @blur="onInputSchemaBlur"
-                />
-                <div v-if="inputSchemaFields.length > 0" class="schema-field-list">
-                  <div v-for="field in inputSchemaFields" :key="field.name" class="schema-field-row">
-                    <span class="schema-field-name">{{ field.name }}</span>
-                    <q-badge color="grey-7" outline :label="field.type" />
-                    <q-badge v-if="field.required" color="negative" outline :label="t('wfRequired')" />
-                    <span v-if="field.description" class="schema-field-desc">{{ field.description }}</span>
+                  <div v-if="selectedNodeLastRun.error" class="q-mb-md">
+                    <div class="config-section-title">{{ t('wfLastRunError') }}</div>
+                    <pre class="wf-last-run-pre wf-last-run-pre--error">{{ formatLastRunValue(selectedNodeLastRun.error) }}</pre>
+                  </div>
+
+                  <div v-if="selectedNodeLastRun.input != null" class="q-mb-md">
+                    <div class="config-section-title">{{ t('wfLastRunInput') }}</div>
+                    <pre class="wf-last-run-pre">{{ formatLastRunValue(selectedNodeLastRun.input) }}</pre>
+                  </div>
+
+                  <div>
+                    <div class="config-section-title">{{ t('wfLastRunOutput') }}</div>
+                    <pre class="wf-last-run-pre">{{ formatNodeRunOutput(selectedNodeLastRun) }}</pre>
                   </div>
                 </div>
-                <q-btn flat dense size="sm" color="primary" :label="t('wfSchemaExample')" icon="auto_fix_high" @click="fillInputSchemaExample" class="q-mt-xs" />
-              </div>
+              </template>
             </div>
 
-            <div class="config-section">
-              <div class="config-section-title">
-                <q-icon name="output" size="16px" class="q-mr-xs" />
-                {{ t('wfOutputSchema') }}
-                <q-btn flat dense size="sm" color="info" :label="t('wfSchemaExample')" icon="help_outline" @click="showSchemaExample" class="q-ml-sm" />
-              </div>
-              <div class="schema-editor">
-                <q-input
-                  v-model="outputSchemaJson"
-                  outlined
-                  dense
-                  type="textarea"
-                  rows="4"
-                  placeholder="{&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {}}"
-                  class="config-input"
-                  :error="!!outputSchemaError"
-                  :error-message="outputSchemaError"
-                  @blur="onOutputSchemaBlur"
-                />
-                <div v-if="outputSchemaFields.length > 0" class="schema-field-list">
-                  <div v-for="field in outputSchemaFields" :key="field.name" class="schema-field-row">
-                    <span class="schema-field-name">{{ field.name }}</span>
-                    <q-badge color="grey-7" outline :label="field.type" />
-                    <q-badge v-if="field.required" color="negative" outline :label="t('wfRequired')" />
-                    <span v-if="field.description" class="schema-field-desc">{{ field.description }}</span>
-                  </div>
+            <div v-show="inspectorTab === 'config'" class="inspector-panel">
+              <div class="config-section">
+                <div class="config-section-title">
+                  <q-icon name="tune" size="16px" class="q-mr-xs" />
+                  {{ t('wfNodeParameters') }}
                 </div>
-                <q-btn flat dense size="sm" color="primary" :label="t('wfSchemaExample')" icon="auto_fix_high" @click="fillOutputSchemaExample" class="q-mt-xs" />
+                <component
+                  v-if="selectedNodeId && registryConfigComponent"
+                  :key="`${selectedNodeId}-${nodeType}`"
+                  :is="registryConfigComponent"
+                  :node-label="nodeLabel"
+                  :config="registryConfigForEditor"
+                  :nodes="nodes"
+                  :node-type="nodeType"
+                  :node-id="selectedNodeId"
+                  :output-schema="selectedOutputSchema"
+                  @update:label="onRegistryLabel"
+                  @update:config="onRegistryConfig"
+                  @update:input-schema="onRegistryInputSchema"
+                />
+                <div v-else-if="selectedNodeId" class="text-grey q-pa-md text-caption">
+                  {{ t('wfUnknownNodeType') }}: {{ nodeType }}
+                </div>
               </div>
-            </div>
 
-            <div class="config-actions">
-              <q-btn
-                v-if="selectedNodeId"
-                color="negative"
-                :label="t('wfDeleteNode')"
-                icon="delete"
-                class="full-width"
-                unelevated
-                @click="deleteSelectedNode"
-              />
+              <q-separator class="q-my-md" />
+
+              <div class="config-section">
+                <div class="config-section-title">
+                  <q-icon name="output" size="16px" class="q-mr-xs" />
+                  {{ t('wfOutputVariables') }}
+                </div>
+                <OutputVariablesDisplay
+                  :node-type="nodeType"
+                  :config="registryConfigForEditor"
+                  :output-schema="selectedOutputSchema"
+                  :node-id="selectedNodeId"
+                />
+              </div>
+
+              <div class="config-section">
+                <div class="config-section-title">
+                  <q-icon name="arrow_forward" size="16px" class="q-mr-xs" />
+                  {{ t('wfNextStep') }}
+                </div>
+                <div class="text-caption text-grey-7 q-mb-sm">{{ t('wfNextStepHint') }}</div>
+                <WorkflowNextStepsPanel
+                  v-if="selectedNodeId"
+                  :steps="selectedNodeNextSteps"
+                  @focus-node="focusNodeInEditor"
+                />
+              </div>
+
+              <div class="config-actions">
+                <q-btn
+                  v-if="selectedNodeId"
+                  color="negative"
+                  :label="t('wfDeleteNode')"
+                  icon="delete"
+                  class="full-width"
+                  unelevated
+                  @click="deleteSelectedNode"
+                />
+              </div>
             </div>
           </div>
 
@@ -471,7 +405,7 @@
     </q-tab-panels>
 
     <!-- 执行结果对话框（画布运行后立即查看） -->
-    <q-dialog v-model="executionDialogOpen" persistent>
+    <q-dialog v-model="executionDialogOpen">
       <q-card class="wf-exec-dialog-card">
         <q-card-section class="row items-center q-pb-none">
           <div class="text-h6">{{ t('wfExecutionResult') }}</div>
@@ -526,12 +460,51 @@
             v-model="runMessage"
             outlined
             type="textarea"
-            rows="5"
+            rows="4"
             :label="t('wfExecuteInput')"
             :placeholder="t('wfExecuteInputPh')"
             class="q-mb-md"
           />
+          <template v-if="runInputFields.length > 0">
+            <div class="text-subtitle2 q-mb-sm">{{ t('wfRunInputFields') }}</div>
+            <div v-for="field in runInputFields" :key="field.name" class="q-mb-md">
+              <q-input
+                v-if="field.type === 'paragraph'"
+                :model-value="runFieldString(field.name)"
+                outlined
+                type="textarea"
+                rows="3"
+                :label="field.label"
+                :hint="field.description"
+                @update:model-value="setRunFieldString(field.name, $event)"
+              />
+              <q-input
+                v-else-if="field.type === 'number'"
+                :model-value="runFieldNumber(field.name)"
+                outlined
+                type="number"
+                :label="field.label"
+                :hint="field.description"
+                @update:model-value="setRunFieldNumber(field.name, $event)"
+              />
+              <q-checkbox
+                v-else-if="field.type === 'checkbox'"
+                :model-value="runFieldBoolean(field.name)"
+                :label="field.label"
+                @update:model-value="setRunFieldBoolean(field.name, $event)"
+              />
+              <q-input
+                v-else
+                :model-value="runFieldString(field.name)"
+                outlined
+                :label="field.label"
+                :hint="field.description"
+                @update:model-value="setRunFieldString(field.name, $event)"
+              />
+            </div>
+          </template>
           <q-input
+            v-else
             v-model="runVariablesJson"
             outlined
             type="textarea"
@@ -703,6 +676,12 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <WorkflowChecklistDialog
+      v-model="checklistDialogOpen"
+      :issues="checklistIssues"
+      @focus-node="focusNodeInEditor"
+    />
   </q-page>
 </template>
 
@@ -711,15 +690,38 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import type { Component } from 'vue'
 import { VueFlow, useVueFlow, EdgeLabelRenderer, BezierEdge, MarkerType } from '@vue-flow/core'
-import type { Edge } from '@vue-flow/core'
 import type { ExecuteWorkflowResponse, WorkflowExecution, WorkflowDefinition } from 'src/api/types'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { useWorkflowEditor } from 'pages/useWorkflowEditor'
+import { useAutoSave } from 'src/composables/useAutoSave'
+import { useWorkflowTasks } from 'src/composables/useWorkflowTasks'
+import { provideWorkflowVariableContext } from 'src/composables/useWorkflowVariableContext'
 import 'pages/workflow-nodes/nodes/loader'
 import { getNode as getWorkflowNodeRegistry, getAllNodes } from 'pages/workflow-nodes/nodes/index'
 import WorkflowNode from 'components/WorkflowNode.vue'
-import VariableInsertDropdown from 'pages/workflow-nodes/VariableInsertDropdown.vue'
+import OutputVariablesDisplay from 'components/OutputVariablesDisplay.vue'
+import WorkflowNextStepsPanel from 'components/WorkflowNextStepsPanel.vue'
+import WorkflowChecklistDialog from 'components/WorkflowChecklistDialog.vue'
+import { buildNextSteps } from 'src/lib/workflowNextSteps'
+import { findStartNodeInputFields, type InputFieldSpec } from 'src/lib/inputFields'
+import {
+  buildWorkflowChecklist,
+  checklistErrorCount,
+  checklistHasErrors
+} from 'src/lib/workflowChecklist'
+import type { LatestDebugMap } from 'src/lib/localVariableTree'
+import { syncInputValuesFromSchema } from 'src/lib/schemaCatalog'
+import {
+  applyUpstreamInputImport,
+  buildInputImportFromUpstreamNode,
+  shouldAutoImportInputSchema
+} from 'src/lib/upstreamInputImport'
+import {
+  inferNodeOrderFromGraph,
+  orderedNodeResultEntries,
+  orderedNodeResultList
+} from 'src/lib/workflowNodeResultOrder'
 
 defineOptions({ name: 'WorkflowsPage' })
 
@@ -757,6 +759,8 @@ const nodeSearch = ref('')
 const zoom = ref(1)
 /** 收起右侧属性栏，中间画布占满（与 configPanelOpen 独立：收起后仍保留选中节点） */
 const rightPanelCollapsed = ref(false)
+const inspectorTab = ref<'config' | 'lastRun'>('config')
+const checklistDialogOpen = ref(false)
 
 const {
   t,
@@ -767,21 +771,51 @@ const {
   openEditor, addNode, onNodeClick, onPaneClick, onEdgeClick, onConnect, onNodesChange,
   deleteSelectedNode,
   deleteNodeById,
-  saveWorkflow, confirmDelete, onTabChange, loadWorkflows,
-  getUpstreamNodes, getNodeOutputFields,
+  saveWorkflow, silentSave, confirmDelete, onTabChange, loadWorkflows,
   executing, executionResult, executionDialogOpen,
   executionHistory,
   executeWorkflowDirect,
   loadExecutionHistory,
-  getExecutionDetail
+  getExecutionDetail,
+  undo, redo, canUndo, canRedo, takeSnapshot
 } = useWorkflowEditor()
 
 const runAnimating = ref(false)
+
+const {
+  saveStatus,
+  setEnabled: setAutoSaveEnabled
+} = useAutoSave({
+  nodes,
+  edges,
+  onSave: async () => {
+    if (!currentWorkflow.value) return true
+    return silentSave()
+  }
+})
+
+useWorkflowTasks()
+
+const saveStatusText = computed(() => {
+  const map: Record<string, string> = {
+    dirty: '未保存',
+    saving: '保存中',
+    saved: '已保存',
+    error: '保存失败'
+  }
+  return map[saveStatus.value] || ''
+})
+
 const historyDialogOpen = ref(false)
 const historyLoading = ref(false)
 const runDialogOpen = ref(false)
 const runMessage = ref('')
 const runVariablesJson = ref('')
+type RunFieldValue = string | number | boolean
+
+const runFieldValues = ref<Record<string, RunFieldValue>>({})
+
+const runInputFields = computed((): InputFieldSpec[] => findStartNodeInputFields(nodes.value))
 /** 历史弹窗内：从列表进入某次运行的详情 */
 const historyShowDetail = ref(false)
 const historyDetailMeta = ref<{ id: number; started_at?: string } | null>(null)
@@ -796,19 +830,10 @@ const historyPagination = ref({
   rowsPerPage: 10
 })
 
-/** 节点结果列表（带类型安全） */
-const nodeResultsList = computed((): Record<string, unknown>[] => {
-  const nr = executionResult.value?.node_results as unknown
-  if (!nr) return []
-  if (Array.isArray(nr)) {
-    return nr.map((r) => r as Record<string, unknown>)
-  }
-  if (typeof nr === 'object') {
-    return Object.values(nr as Record<string, unknown>)
-      .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === 'object' && !Array.isArray(r))
-  }
-  return []
-})
+/** 节点结果列表（按执行/拓扑顺序） */
+const nodeResultsList = computed((): Record<string, unknown>[] =>
+  orderedNodeResultList(executionResult.value, edges.value)
+)
 
 function historyDetailBack () {
   historyShowDetail.value = false
@@ -832,11 +857,77 @@ function openWorkflowHistoryFromList (wf: WorkflowDefinition) {
   historyDialogOpen.value = true
 }
 
-const nodeResultsEntries = computed(() => {
-  const r = executionResult.value?.node_results
-  if (!r || typeof r !== 'object') return [] as Array<[string, Record<string, unknown>]>
-  return Object.entries(r) as Array<[string, Record<string, unknown>]>
+const nodeResultsEntries = computed(() =>
+  orderedNodeResultEntries(executionResult.value, edges.value)
+)
+
+const checklistIssues = computed(() => buildWorkflowChecklist(nodes.value, edges.value, t))
+const checklistErrors = computed(() => checklistErrorCount(checklistIssues.value))
+
+const selectedNodeNextSteps = computed(() => {
+  const nodeId = selectedNodeId.value
+  if (!nodeId) return []
+  return buildNextSteps(
+    nodeId,
+    nodes.value,
+    edges.value,
+    nodeType.value,
+    registryConfigForEditor.value,
+    selectedOutputSchema.value
+  )
 })
+
+const selectedNodeLastRun = computed((): Record<string, unknown> | null => {
+  const nodeId = selectedNodeId.value
+  if (!nodeId || !executionResult.value?.node_results) return null
+  const nr = executionResult.value.node_results
+  if (typeof nr !== 'object' || Array.isArray(nr)) return null
+  const row = (nr as Record<string, unknown>)[nodeId]
+  return row && typeof row === 'object' && !Array.isArray(row)
+    ? row as Record<string, unknown>
+    : null
+})
+
+function formatLastRunValue (val: unknown): string {
+  if (val == null) return '—'
+  if (typeof val === 'string') return val
+  try {
+    return JSON.stringify(val, null, 2)
+  } catch {
+    return String(val)
+  }
+}
+
+/** Code 节点 stdout 在 output.output；优先展示 print 结果而非整段 JSON。 */
+function formatNodeRunOutput (row: Record<string, unknown>): string {
+  const raw = row.output ?? row.data
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>
+    if (o.type === 'code') {
+      const parts: string[] = []
+      const stdout = o.output
+      if (stdout != null && String(stdout).trim() !== '') {
+        parts.push(String(stdout))
+      }
+      const errText = o.error
+      if (errText != null && String(errText).trim() !== '') {
+        parts.push(`[error] ${String(errText)}`)
+      }
+      if (parts.length > 0) return parts.join('\n')
+      if (stdout != null) return String(stdout)
+    }
+  }
+  return formatLastRunValue(raw)
+}
+
+function focusNodeInEditor (nodeId: string) {
+  const node = nodes.value.find(n => n.id === nodeId)
+  if (!node) return
+  onNodeClick(new MouseEvent('click'), node)
+  inspectorTab.value = 'config'
+  rightPanelCollapsed.value = false
+  checklistDialogOpen.value = false
+}
 
 /** 错误列固定像素；其余列按比例分「表格宽度 − 错误列」 */
 const WF_HISTORY_ERROR_COL_PX = 600
@@ -932,45 +1023,10 @@ function restoreEdgeVisuals (snap: Map<string, { style?: Record<string, unknown>
   }
 }
 
-/** 当接口未返回顺序时，按图上依赖做拓扑排序 */
-function inferNodeOrderFromGraph (
-  nodeResults: Record<string, unknown> | undefined,
-  edgeList: Edge[]
-): string[] {
-  const keys = nodeResults ? Object.keys(nodeResults) : []
-  if (keys.length === 0) return []
-  const idSet = new Set(keys)
-  const inDeg = new Map<string, number>()
-  const adj = new Map<string, string[]>()
-  for (const k of keys) {
-    inDeg.set(k, 0)
-    adj.set(k, [])
-  }
-  for (const e of edgeList) {
-    if (!idSet.has(e.source) || !idSet.has(e.target)) continue
-    inDeg.set(e.target, (inDeg.get(e.target) ?? 0) + 1)
-    const arr = adj.get(e.source)
-    if (arr) arr.push(e.target)
-  }
-  const q: string[] = []
-  for (const [id, d] of inDeg) {
-    if (d === 0) q.push(id)
-  }
-  const out: string[] = []
-  while (q.length) {
-    const u = q.shift()!
-    out.push(u)
-    for (const v of adj.get(u) || []) {
-      const nd = (inDeg.get(v) ?? 0) - 1
-      inDeg.set(v, nd)
-      if (nd === 0) q.push(v)
-    }
-  }
-  return out.length ? out : keys
-}
-
 async function playRunEdgeAnimation (resp: ExecuteWorkflowResponse): Promise<void> {
-  const order = (resp.node_result_order?.length ? resp.node_result_order : inferNodeOrderFromGraph(resp.node_results, edges.value))
+  const order = (resp.node_result_order?.length
+    ? resp.node_result_order
+    : inferNodeOrderFromGraph(resp.node_results, edges.value))
   if (order.length < 2) return
   const snap = snapshotEdgeVisuals()
   try {
@@ -995,19 +1051,88 @@ async function playRunEdgeAnimation (resp: ExecuteWorkflowResponse): Promise<voi
   }
 }
 
+function coerceRunFieldDefault (field: InputFieldSpec): RunFieldValue {
+  if (field.default !== undefined) {
+    if (field.type === 'checkbox') return Boolean(field.default)
+    if (field.type === 'number') {
+      const n = Number(field.default)
+      return Number.isFinite(n) ? n : 0
+    }
+    return String(field.default)
+  }
+  if (field.type === 'checkbox') return false
+  if (field.type === 'number') return 0
+  return ''
+}
+
+function initRunFieldValues () {
+  const next: Record<string, RunFieldValue> = {}
+  for (const field of runInputFields.value) {
+    next[field.name] = coerceRunFieldDefault(field)
+  }
+  runFieldValues.value = next
+}
+
+function runFieldString (name: string): string {
+  const v = runFieldValues.value[name]
+  return typeof v === 'string' ? v : v == null ? '' : String(v)
+}
+
+function setRunFieldString (name: string, val: string | number | null): void {
+  runFieldValues.value = {
+    ...runFieldValues.value,
+    [name]: val == null ? '' : String(val)
+  }
+}
+
+function runFieldNumber (name: string): number {
+  const v = runFieldValues.value[name]
+  return typeof v === 'number' ? v : Number(v) || 0
+}
+
+function setRunFieldNumber (name: string, val: string | number | null): void {
+  const n = val == null ? 0 : Number(val)
+  runFieldValues.value = {
+    ...runFieldValues.value,
+    [name]: Number.isFinite(n) ? n : 0
+  }
+}
+
+function runFieldBoolean (name: string): boolean {
+  return runFieldValues.value[name] === true
+}
+
+function setRunFieldBoolean (name: string, val: boolean): void {
+  runFieldValues.value = {
+    ...runFieldValues.value,
+    [name]: val
+  }
+}
+
 async function onRunWorkflow () {
+  const issues = buildWorkflowChecklist(nodes.value, edges.value, t)
+  if (checklistHasErrors(issues)) {
+    checklistDialogOpen.value = true
+    $q.notify({ type: 'negative', message: t('wfChecklistBlockRun') })
+    return
+  }
   runMessage.value = startNodeUserPrompt()
   runVariablesJson.value = ''
+  initRunFieldValues()
   runDialogOpen.value = true
 }
 
 async function confirmRunWorkflow () {
   let variables: Record<string, unknown> | undefined
-  try {
-    variables = parseRunVariables()
-  } catch {
-    $q.notify({ type: 'negative', message: t('wfInvalidVariables') })
-    return
+  if (runInputFields.value.length > 0) {
+    variables = { ...runFieldValues.value }
+  } else {
+    try {
+      variables = parseRunVariables()
+    } catch {
+      $q.notify({ type: 'negative', message: t('wfInvalidVariables') })
+      return
+    }
   }
   const payload = await executeWorkflowDirect({
     message: runMessage.value.trim(),
@@ -1025,26 +1150,40 @@ async function confirmRunWorkflow () {
   if (wid != null) {
     await loadExecutionHistory(wid)
   }
+  if (selectedNodeId.value) {
+    inspectorTab.value = 'lastRun'
+    rightPanelCollapsed.value = false
+    configPanelOpen.value = true
+  }
   executionDialogOpen.value = true
 }
 
 function workflowExecutionToDisplay (exec: WorkflowExecution): ExecuteWorkflowResponse {
   const rawNr = exec.node_results
   const map: Record<string, unknown> = {}
+  const order: string[] = []
   if (Array.isArray(rawNr)) {
     for (const row of rawNr) {
       if (row && typeof row === 'object' && 'node_id' in row) {
         const nid = String((row as { node_id: string }).node_id)
         map[nid] = row
+        order.push(nid)
       }
     }
   } else if (rawNr && typeof rawNr === 'object' && !Array.isArray(rawNr)) {
     Object.assign(map, rawNr as Record<string, unknown>)
   }
+  const nodeResults = map as Record<string, unknown>
+  const nodeOrder = order.length > 0
+    ? order
+    : inferNodeOrderFromGraph(
+      Object.keys(nodeResults).length > 0 ? nodeResults : undefined,
+      edges.value
+    )
   return {
     output: exec.output,
-    node_results: map,
-    node_result_order: Object.keys(map),
+    node_results: nodeResults,
+    node_result_order: nodeOrder,
     duration_ms: exec.duration_ms,
     execution_id: exec.id
   }
@@ -1086,8 +1225,16 @@ async function onHistoryRowClick (_evt: unknown, row: WorkflowExecution) {
 
 watch(activeTab, (tab) => {
   if (tab === 'editor') {
-    nextTick(() => fitCanvasView())
+    nextTick(() => {
+      fitCanvasView()
+      syncAllNodesInputFromUpstream()
+    })
   }
+})
+
+watch(currentWorkflow, (wf) => {
+  if (!wf) return
+  nextTick(() => syncAllNodesInputFromUpstream())
 })
 
 function toggleRightPropsPanel () {
@@ -1095,9 +1242,22 @@ function toggleRightPropsPanel () {
   rightPanelCollapsed.value = !rightPanelCollapsed.value
 }
 
+function handleUndo () {
+  undo()
+  takeSnapshot()
+}
+
+function handleRedo () {
+  redo()
+}
+
 watch(rightPanelCollapsed, () => {
   nextTick(() => fitCanvasView())
 })
+
+watch([activeTab, currentWorkflow], ([tab, wf]) => {
+  setAutoSaveEnabled(tab === 'editor' && !!wf)
+}, { immediate: true })
 
 const PALETTE_CATEGORY_ORDER = ['flow', 'ai', 'action', 'data', 'ops', 'notify', 'test']
 
@@ -1198,7 +1358,7 @@ function onRegistryLabel (v: string) {
 function onRegistryConfig (cfg: Record<string, unknown>) {
   updateSelectedNodeData(d => {
     const prevCfg = (d.config as Record<string, unknown>) || {}
-    /** 与节点表单合并，避免子组件某次 emit 未带上 input_mapping 等「旁路」字段时把整份 config 覆盖掉 */
+    /** 与节点表单合并，避免子组件某次 emit 未带上 config 已有字段时把整份覆盖掉 */
     const mergedCfg = { ...prevCfg, ...cfg }
     const next: Record<string, unknown> = { ...d, config: mergedCfg }
     if ('agent_id' in cfg && cfg.agent_id !== undefined && cfg.agent_id !== null) {
@@ -1206,348 +1366,121 @@ function onRegistryConfig (cfg: Record<string, unknown>) {
       const n = typeof aid === 'number' ? aid : Number(aid)
       next.agentId = Number.isNaN(n) ? null : n
     }
+    if (d.nodeType === 'start' && cfg.input_schema && typeof cfg.input_schema === 'object') {
+      next.inputSchema = cfg.input_schema
+    }
     return next
   })
 }
 
-function newMappingRowId (): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `im_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-}
-
-interface InputMapping {
-  id: string
-  target: string
-  mode: 'field' | 'expr'
-  sourceNode: string | null
-  sourceField: string | null
-  expression: string
-  schemaField?: boolean
-  schemaType?: string
-  schemaRequired?: boolean
-  schemaDescription?: string
-}
-
-const inputMappings = ref<InputMapping[]>([])
-const inputSchemaError = ref('')
-const outputSchemaError = ref('')
-
-interface SchemaField {
-  name: string
-  type: string
-  required: boolean
-  description: string
-}
-
-function schemaRequiredSet (schema: unknown): Set<string> {
-  const out = new Set<string>()
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return out
-  const raw = (schema as Record<string, unknown>).required
-  if (Array.isArray(raw)) {
-    raw.forEach(v => {
-      if (typeof v === 'string' && v.trim()) out.add(v.trim())
-    })
-  }
-  return out
-}
-
-function schemaFieldsFromSchema (schema: unknown): SchemaField[] {
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return []
-  const root = schema as Record<string, unknown>
-  const props = root.properties
-  if (!props || typeof props !== 'object' || Array.isArray(props)) return []
-  const required = schemaRequiredSet(root)
-  return Object.entries(props as Record<string, unknown>).map(([name, raw]) => {
-    const field = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
-    const type = schemaTypeLabel(field)
-    const description = typeof field.description === 'string' ? field.description : ''
-    const fieldRequired = field.required === true || required.has(name)
-    return { name, type, required: fieldRequired, description }
-  })
-}
-
-function schemaTypeLabel (field: Record<string, unknown>): string {
-  const rawType = field.type
-  if (typeof rawType === 'string' && rawType.trim()) return rawType.trim()
-  if (Array.isArray(rawType)) {
-    const types = rawType
-      .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
-      .map(item => item.trim())
-    if (types.length > 0) return types.join(' | ')
-  }
-  if (Array.isArray(field.enum)) return 'enum'
-  if (Array.isArray(field.oneOf)) return 'oneOf'
-  if (Array.isArray(field.anyOf)) return 'anyOf'
-  if (Array.isArray(field.allOf)) return 'allOf'
-  return 'any'
-}
-
-const inputSchemaFields = computed(() => schemaFieldsFromSchema(selectedNodeData.value.inputSchema))
-const outputSchemaFields = computed(() => schemaFieldsFromSchema(selectedNodeData.value.outputSchema))
-
-function applySchemaMetadataToMappings (rows: InputMapping[], fields: SchemaField[] = inputSchemaFields.value): InputMapping[] {
-  const byName = new Map(fields.map(f => [f.name, f]))
-  return rows.map(row => {
-    const meta = byName.get(row.target)
-    return {
-      ...row,
-      schemaField: Boolean(meta),
-      schemaType: meta?.type,
-      schemaRequired: meta?.required,
-      schemaDescription: meta?.description
-    }
-  })
-}
-
-/** Reverse `{{.<nodeLabel>.<field>}}` saved in node config → editor rows */
-function parseInputMappingFromConfig (
-  mapping: Record<string, string> | undefined,
-  allNodes: typeof nodes.value
-): InputMapping[] {
-  if (!mapping || typeof mapping !== 'object') return []
-  const labelToId = new Map<string, string>()
-  for (const n of allNodes) {
-    const data = n.data as Record<string, unknown>
-    const label = String(data?.label || n.id)
-    labelToId.set(label, n.id)
-  }
-  const rows: InputMapping[] = []
-  for (const [target, expr] of Object.entries(mapping)) {
-    if (typeof expr !== 'string') continue
-    const m = expr.match(/^\{\{\.([^}]+)\}\}$/)
-    if (!m) {
-      rows.push({ id: newMappingRowId(), target, mode: 'expr', sourceNode: null, sourceField: null, expression: expr })
-      continue
-    }
-    const inner = m[1]
-    const dotIdx = inner.indexOf('.')
-    if (dotIdx < 0) {
-      rows.push({ id: newMappingRowId(), target, mode: 'expr', sourceNode: null, sourceField: null, expression: expr })
-      continue
-    }
-    const sourceLabel = inner.slice(0, dotIdx)
-    const sourceField = inner.slice(dotIdx + 1)
-    const sourceNode = labelToId.get(sourceLabel) ?? null
-    rows.push({
-      id: newMappingRowId(),
-      target,
-      mode: sourceNode ? 'field' : 'expr',
-      sourceNode,
-      sourceField: sourceNode ? sourceField || null : null,
-      expression: sourceNode ? '' : expr
-    })
-  }
-  return applySchemaMetadataToMappings(rows)
-}
-
-function mergeMappingsWithSchemaFields (rows: InputMapping[], fields: SchemaField[]): InputMapping[] {
-  const existing = new Map(rows.map(row => [row.target, row]))
-  const next: InputMapping[] = []
-  for (const field of fields) {
-    const existingRow = existing.get(field.name)
-    if (existingRow) {
-      next.push(existingRow)
-    } else {
-      next.push({
-        id: newMappingRowId(),
-        target: field.name,
-        mode: 'field',
-        sourceNode: null,
-        sourceField: null,
-        expression: ''
-      })
-    }
-  }
-  for (const row of rows) {
-    if (!fields.some(field => field.name === row.target)) {
-      next.push(row)
-    }
-  }
-  return applySchemaMetadataToMappings(next, fields)
-}
-
-watch(selectedNodeId, (id) => {
-  if (!id) {
-    inputMappings.value = []
-    return
-  }
-  void nextTick(() => {
-    if (selectedNodeId.value !== id) return
-    const node = nodes.value.find(n => n.id === id)
-    const cfg = (node?.data as Record<string, unknown> | undefined)?.config as Record<string, unknown> | undefined
-    const im = cfg?.input_mapping as Record<string, string> | undefined
-    const rows = parseInputMappingFromConfig(im, nodes.value)
-    inputMappings.value = mergeMappingsWithSchemaFields(rows, inputSchemaFields.value)
-  })
-}, { immediate: true })
-
-watch(inputMappings, (val) => {
-  const mapping: Record<string, string> = {}
-  val.forEach(m => {
-    if (!m.target) return
-    if (m.mode === 'expr') {
-      const expr = m.expression.trim()
-      if (expr) mapping[m.target] = expr
-      return
-    }
-    if (m.sourceNode && m.sourceField) {
-      const sourceLabel = getNodeLabelById(m.sourceNode)
-      mapping[m.target] = `{{.${sourceLabel}.${m.sourceField}}}`
-    }
-  })
+function applyInputSchemaToNode (schema: Record<string, unknown> | null) {
   updateSelectedNodeData(d => {
     const base = (d.config as Record<string, unknown>) || {}
-    return { ...d, config: { ...base, input_mapping: mapping } }
-  })
-}, { deep: true })
-
-function getNodeLabelById (nodeId: string): string {
-  const node = nodes.value.find(n => n.id === nodeId)
-  if (node) {
-    return (node.data as Record<string, unknown>).label as string || nodeId
-  }
-  return nodeId
-}
-
-const upstreamNodeOptions = computed(() => {
-  return getUpstreamNodes().map(n => ({
-    label: n.label,
-    value: n.value,
-    nodeType: n.nodeType
-  }))
-})
-
-const nodeOutputFields = computed(() => {
-  const fields: Record<string, string[]> = {}
-  for (const n of getUpstreamNodes()) {
-    fields[n.value] = getNodeOutputFields(n.value)
-  }
-  return fields
-})
-
-function onVariableInsert (varPath: string) {
-  $q.notify({
-    type: 'info',
-    message: `已复制: ${varPath}`,
-    timeout: 1500
-  })
-  navigator.clipboard?.writeText(varPath)
-}
-
-function getFieldOptions (nodeId: string | null): Array<{ label: string; value: string }> {
-  if (!nodeId) return []
-  return getNodeOutputFields(nodeId).map(f => ({
-    label: f,
-    value: f
-  }))
-}
-
-function onSourceNodeChange (index: number) {
-  inputMappings.value[index].sourceField = null
-}
-
-function addMapping () {
-  inputMappings.value.push({
-    id: newMappingRowId(),
-    target: '',
-    mode: 'field',
-    sourceNode: null,
-    sourceField: null,
-    expression: ''
-  })
-}
-
-function removeMapping (index: number) {
-  if (inputMappings.value[index]?.schemaRequired) return
-  inputMappings.value.splice(index, 1)
-}
-
-function toggleMappingMode (index: number) {
-  const row = inputMappings.value[index]
-  if (!row) return
-  if (row.mode === 'expr') {
-    row.mode = 'field'
-    row.expression = ''
-  } else {
-    row.mode = 'expr'
-    row.expression = row.sourceNode && row.sourceField ? `{{.${getNodeLabelById(row.sourceNode)}.${row.sourceField}}}` : ''
-    row.sourceNode = null
-    row.sourceField = null
-  }
-}
-
-function syncInputMappingsWithSchema () {
-  inputMappings.value = mergeMappingsWithSchemaFields(inputMappings.value, inputSchemaFields.value)
-}
-
-const inputSchemaJson = ref('')
-const outputSchemaJson = ref('')
-
-watch(() => selectedNodeData.value.inputSchema, (val) => {
-  inputSchemaJson.value = val ? JSON.stringify(val, null, 2) : ''
-  inputSchemaError.value = ''
-}, { immediate: true })
-
-watch(() => selectedNodeData.value.outputSchema, (val) => {
-  outputSchemaJson.value = val ? JSON.stringify(val, null, 2) : ''
-  outputSchemaError.value = ''
-}, { immediate: true })
-
-function onInputSchemaBlur () {
-  try {
-    const parsed = inputSchemaJson.value ? JSON.parse(inputSchemaJson.value) : undefined
-    inputSchemaError.value = ''
-    updateSelectedNodeData(d => ({ ...d, inputSchema: parsed }))
-    inputMappings.value = mergeMappingsWithSchemaFields(inputMappings.value, schemaFieldsFromSchema(parsed))
-  } catch (err) {
-    inputSchemaError.value = err instanceof Error ? err.message : t('wfInvalidSchemaJson')
-  }
-}
-
-function onOutputSchemaBlur () {
-  try {
-    const parsed = outputSchemaJson.value ? JSON.parse(outputSchemaJson.value) : undefined
-    outputSchemaError.value = ''
-    updateSelectedNodeData(d => ({ ...d, outputSchema: parsed }))
-  } catch (err) {
-    outputSchemaError.value = err instanceof Error ? err.message : t('wfInvalidSchemaJson')
-  }
-}
-
-function showSchemaExample () {
-  $q.dialog({
-    title: t('wfSchemaExampleTitle'),
-    message: `<pre style="font-size:12px;white-space:pre-wrap;max-height:400px;overflow:auto;">${t('wfSchemaExampleBody')}</pre>`,
-    html: true,
-    class: 'schema-example-dialog',
-    ok: { label: t('close'), flat: true, color: 'primary' }
-  })
-}
-
-function fillInputSchemaExample () {
-  inputSchemaJson.value = JSON.stringify({
-    type: 'object',
-    properties: {
-      city: { type: 'string', description: '城市名称' },
-      date: { type: 'string', description: '日期，格式：YYYY-MM-DD' }
-    },
-    required: ['city']
-  }, null, 2)
-  onInputSchemaBlur()
-}
-
-function fillOutputSchemaExample () {
-  outputSchemaJson.value = JSON.stringify({
-    type: 'object',
-    properties: {
-      temperature: { type: 'number', description: '温度，单位摄氏度' },
-      condition: { type: 'string', description: '天气状况' }
+    const prevValues = (base.input_values as Record<string, string>) || {}
+    const synced = syncInputValuesFromSchema(schema, prevValues)
+    return {
+      ...d,
+      inputSchema: schema || undefined,
+      config: { ...base, input_values: synced }
     }
-  }, null, 2)
-  onOutputSchemaBlur()
+  })
 }
+
+function onRegistryInputSchema (schema: Record<string, unknown> | null) {
+  applyInputSchemaToNode(schema)
+}
+
+const latestDebugMap = computed((): LatestDebugMap => {
+  const nr = executionResult.value?.node_results
+  if (!nr || typeof nr !== 'object' || Array.isArray(nr)) return {}
+  const out: LatestDebugMap = {}
+  for (const [nodeId, raw] of Object.entries(nr as Record<string, unknown>)) {
+    if (!raw || typeof raw !== 'object') continue
+    const row = raw as Record<string, unknown>
+    const output = row.output ?? row.data
+    if (output !== undefined) {
+      out[nodeId] = { output }
+    }
+  }
+  return out
+})
+
+provideWorkflowVariableContext({
+  selectedNodeId,
+  nodes,
+  edges,
+  latestDebug: latestDebugMap
+})
+
+function updateNodeDataById (
+  nodeId: string,
+  updater: (data: Record<string, unknown>) => Record<string, unknown>
+) {
+  const node = nodes.value.find(n => n.id === nodeId)
+  if (!node) return
+  const next = updater({ ...(node.data as Record<string, unknown>) })
+  node.data = next
+  if (selectedNodeId.value === nodeId) {
+    selectedNodeData.value = { ...next }
+  }
+}
+
+function syncInputFromUpstreamEdge (
+  targetNodeId: string,
+  sourceNodeId?: string,
+  options: { force?: boolean } = {}
+): boolean {
+  const targetNode = nodes.value.find(n => n.id === targetNodeId)
+  if (!targetNode) return false
+
+  const targetData = targetNode.data as Record<string, unknown>
+  const nodeType = (targetData.nodeType as string) || ''
+  if (!shouldAutoImportInputSchema(nodeType, targetData.inputSchema, options)) return false
+
+  let resolvedSourceId = sourceNodeId
+  if (!resolvedSourceId) {
+    const incoming = edges.value.filter(e => e.target === targetNodeId)
+    if (incoming.length === 0) return false
+    resolvedSourceId = incoming[0]?.source
+  }
+  if (!resolvedSourceId) return false
+
+  const sourceNode = nodes.value.find(n => n.id === resolvedSourceId)
+  if (!sourceNode) return false
+
+  const sourceData = sourceNode.data as Record<string, unknown>
+  const payload = buildInputImportFromUpstreamNode(
+    sourceNode.id,
+    (sourceData.nodeType as string) || '',
+    (sourceData.config as Record<string, unknown>) || {},
+    sourceData.outputSchema as Record<string, unknown> | undefined
+  )
+  if (!payload) return false
+
+  updateNodeDataById(targetNodeId, d => applyUpstreamInputImport(d, payload, true))
+  return true
+}
+
+function syncAllNodesInputFromUpstream () {
+  for (const node of nodes.value) {
+    syncInputFromUpstreamEdge(node.id)
+  }
+}
+
+const selectedOutputSchema = computed((): Record<string, unknown> | null | undefined => {
+  const raw = selectedNodeData.value.outputSchema
+  if (raw == null) return null
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>
+  return undefined
+})
+
+watch(selectedNodeId, (id) => {
+  if (!id) return
+  void nextTick(() => {
+    if (selectedNodeId.value !== id) return
+    syncInputFromUpstreamEdge(id)
+  })
+}, { immediate: true })
 
 function addNodeQuick (type: string) {
   const center = {
@@ -1593,7 +1526,11 @@ function onNodeDoubleClick (nodeProps: any) {
 }
 
 function handleConnect (connection: unknown) {
-  onConnect(connection as any)
+  onConnect(connection as Parameters<typeof onConnect>[0])
+  const conn = connection as { source?: string; target?: string }
+  if (conn.source && conn.target) {
+    syncInputFromUpstreamEdge(conn.target, conn.source, { force: true })
+  }
 }
 
 function handleNodesChange (changes: unknown) {
@@ -1710,6 +1647,36 @@ function onMoveEnd (e: any) {
   top: 0;
   background: white;
   z-index: 10;
+}
+
+.inspector-tabs {
+  border-bottom: 1px solid #e8e8e8;
+  position: sticky;
+  top: 45px;
+  background: white;
+  z-index: 9;
+}
+
+.inspector-panel {
+  flex: 1;
+}
+
+.inspector-last-run .wf-last-run-pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.inspector-last-run .wf-last-run-pre--error {
+  background: #ffebee;
+  color: #c10015;
 }
 
 .node-search {
@@ -2034,6 +2001,19 @@ function onMoveEnd (e: any) {
   font-size: 12px;
   color: #666;
 }
+.schema-input-list {
+  margin-top: 12px;
+}
+.schema-input-row {
+  margin-bottom: 10px;
+}
+.schema-input-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #444;
+  margin-bottom: 4px;
+}
 </style>
 
 <style>
@@ -2220,5 +2200,45 @@ function onMoveEnd (e: any) {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed #eee;
+}
+
+/* Autosave status indicator */
+.autosave-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.autosave-status--dirty {
+  color: #d46b08;
+}
+
+.autosave-status--saving {
+  color: #1890ff;
+}
+
+.autosave-status--saved {
+  color: #52c41a;
+}
+
+.autosave-status--error {
+  color: #ff4d4f;
+}
+
+.autosave-text {
+  font-size: 11px;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 </style>

@@ -7,9 +7,10 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/fisk086/sya/internal/larkbot"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
+	"github.com/fisk086/aiops/internal/larkbot"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
 )
 
 type LarkBotStatus struct {
@@ -92,6 +93,33 @@ func (c *LarkBotController) ListBots(ctx context.Context, hc *app.RequestContext
 	}))
 }
 
+func (c *LarkBotController) persistAllLarkWsEnabled(enabled bool) {
+	ctrl := GetAgentController()
+	if ctrl == nil || c.agentService == nil {
+		return
+	}
+	agents, err := c.agentService.ListAgents()
+	if err != nil {
+		logger.Warn("larkbot: list agents for ws_enabled persist failed", "err", err)
+		return
+	}
+	for _, a := range agents {
+		if a == nil {
+			continue
+		}
+		full, err := c.agentService.GetAgent(a.ID)
+		if err != nil || full == nil || full.RuntimeProfile == nil {
+			continue
+		}
+		if full.RuntimeProfile.IMEnabled != "lark" || full.RuntimeProfile.IMConfig.AppID == "" {
+			continue
+		}
+		if err := ctrl.SetLarkIMWsEnabled(a.ID, enabled); err != nil {
+			logger.Warn("larkbot: persist ws_enabled failed", "agent_id", a.ID, "enabled", enabled, "err", err)
+		}
+	}
+}
+
 func (c *LarkBotController) Start(ctx context.Context, hc *app.RequestContext) {
 	client := larkbot.Global()
 
@@ -99,6 +127,8 @@ func (c *LarkBotController) Start(ctx context.Context, hc *app.RequestContext) {
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("no bots registered"))
 		return
 	}
+
+	c.persistAllLarkWsEnabled(true)
 
 	go func() {
 		client.Start(ctx)
@@ -113,6 +143,7 @@ func (c *LarkBotController) Start(ctx context.Context, hc *app.RequestContext) {
 func (c *LarkBotController) Stop(ctx context.Context, hc *app.RequestContext) {
 	client := larkbot.Global()
 	client.Stop()
+	c.persistAllLarkWsEnabled(false)
 
 	hc.JSON(http.StatusOK, schema.SuccessResponse(map[string]any{
 		"stopped": true,
@@ -215,7 +246,15 @@ func (c *LarkBotController) StartAgentWS(ctx context.Context, hc *app.RequestCon
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("lark app_id is empty"))
 		return
 	}
-	ctrl.RegisterLarkBotForAgent(agent)
+	if err := ctrl.SetLarkIMWsEnabled(agentID, true); err != nil {
+		hc.JSON(http.StatusInternalServerError, schema.ErrorResponse(err.Error()))
+		return
+	}
+	agent, err = ctrl.GetAgentByID(agentID)
+	if err != nil || agent == nil {
+		hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
+		return
+	}
 	client := larkbot.Global()
 	if client.GetBotConfig(appID) == nil {
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("bot not registered: check Lark App ID / Secret and save the agent, or ensure IM channel is Lark"))
@@ -258,6 +297,9 @@ func (c *LarkBotController) StopAgentWS(ctx context.Context, hc *app.RequestCont
 		return
 	}
 	larkbot.Global().StopBot(appID)
+	if err := ctrl.SetLarkIMWsEnabled(agentID, false); err != nil {
+		logger.Warn("larkbot: persist ws_enabled=false failed", "agent_id", agentID, "err", err)
+	}
 	hc.JSON(http.StatusOK, schema.SuccessResponse(map[string]any{
 		"stopped": true,
 		"app_id":  appID,

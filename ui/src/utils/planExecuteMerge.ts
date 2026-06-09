@@ -1,4 +1,4 @@
-/** Align with taskmate-desktop PlanExecuteTaskPanel: per-step SSE detail lines */
+/** Align with aiops-desktop PlanExecuteTaskPanel: per-step SSE detail lines */
 
 export type PlanDetailTone = 'error' | 'muted'
 

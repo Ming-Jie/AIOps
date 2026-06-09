@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/model"
 	"gorm.io/gorm"
 )
 

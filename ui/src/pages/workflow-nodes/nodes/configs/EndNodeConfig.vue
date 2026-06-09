@@ -6,14 +6,10 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfEndOutputMapping') }}</div>
-      <q-input
+      <WorkflowVariableField
         :model-value="strField('output_mapping')"
-        outlined
-        dense
-        type="textarea"
-        rows="4"
+        :rows="4"
         :placeholder="t('wfEndOutputMappingPh')"
-        class="config-input"
         @update:model-value="patchConfig('output_mapping', $event)"
       />
     </div>
@@ -23,6 +19,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
 
 const props = defineProps<{
   nodeLabel: string

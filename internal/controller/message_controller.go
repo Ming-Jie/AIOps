@@ -4,8 +4,8 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"

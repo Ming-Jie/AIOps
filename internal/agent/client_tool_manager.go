@@ -10,9 +10,9 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	einoschema "github.com/cloudwego/eino/schema"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 const ClientToolCallTimeout = 5 * time.Minute

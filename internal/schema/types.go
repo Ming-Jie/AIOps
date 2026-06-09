@@ -14,6 +14,7 @@ type Agent struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 	SkillIDs     []string  `json:"skill_ids,omitempty"`
 	MCPConfigIDs []int64   `json:"mcp_config_ids,omitempty"`
+	KBIDs        []int64   `json:"kb_ids,omitempty"`
 }
 
 type AgentWithRuntime struct {
@@ -34,11 +35,13 @@ type RuntimeProfile struct {
 	Backstory       string   `json:"backstory,omitempty"`
 	SystemPrompt    string   `json:"system_prompt,omitempty"`
 	LlmModel        string   `json:"llm_model,omitempty"`
+	ModelConfigID   int64    `json:"model_config_id,omitempty"`
 	Temperature     float64  `json:"temperature"`
 	StreamEnabled   bool     `json:"stream_enabled"`
 	MemoryEnabled   bool     `json:"memory_enabled"`
 	SkillIDs        []string `json:"skill_ids,omitempty"`
 	MCPConfigIDs    []int64  `json:"mcp_config_ids,omitempty"`
+	KBIDs           []int64  `json:"kb_ids,omitempty"` // bound knowledge base ids (RAG)
 	ExecutionMode   string   `json:"execution_mode,omitempty"`
 	MaxIterations   int      `json:"max_iterations,omitempty"`
 	PlanPrompt      string   `json:"plan_prompt,omitempty"`
@@ -61,9 +64,8 @@ type IMConfig struct {
 	TelegramChatID   string `json:"telegram_chat_id,omitempty"`
 	AutoReply        bool   `json:"auto_reply,omitempty"`
 	NotifyOnApproval bool   `json:"notify_on_approval,omitempty"`
-	// Lark event subscription: URL challenge (LARK_BOT_VERIFICATION_TOKEN) and payload decrypt (LARK_BOT_ENCRYPT_KEY).
-	VerificationToken string `json:"verification_token,omitempty"`
-	EncryptKey        string `json:"encrypt_key,omitempty"`
+	// AllowedUsers limits who may message this bot (Lark open_id list). Empty = no restriction.
+	AllowedUsers []string `json:"allowed_users,omitempty"`
 	// LarkRegion legacy: "cn" | "intl" when lark_open_domain empty (prefer lark_open_domain in UI).
 	LarkRegion string `json:"lark_region,omitempty"`
 	// LarkOpenDomain is the Open Platform base URL, e.g. https://open.feishu.cn or https://open.larksuite.com

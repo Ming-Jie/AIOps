@@ -7,12 +7,12 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/auth"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/auth"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 type AgentController struct {
@@ -50,6 +50,10 @@ func (c *AgentController) SetIMManager(mgr IMManagerInterface) {
 }
 
 func (c *AgentController) registerLarkBotIfNeeded(agent *schema.AgentWithRuntime) {
+	c.registerIMBotIfNeeded(agent)
+}
+
+func (c *AgentController) registerIMBotIfNeeded(agent *schema.AgentWithRuntime) {
 	if c.imManager == nil || agent == nil || agent.RuntimeProfile == nil {
 		return
 	}
@@ -60,6 +64,10 @@ func (c *AgentController) registerLarkBotIfNeeded(agent *schema.AgentWithRuntime
 }
 
 func (c *AgentController) unregisterLarkBotIfNeeded(agentID int64) {
+	c.unregisterIMBotIfNeeded(agentID)
+}
+
+func (c *AgentController) unregisterIMBotIfNeeded(agentID int64) {
 	if c.imManager == nil {
 		return
 	}
@@ -74,16 +82,111 @@ func (c *AgentController) RegisterLarkBotForAgent(agent *schema.AgentWithRuntime
 	c.registerLarkBotIfNeeded(agent)
 }
 
+// SetLarkIMWsEnabled persists im_config.ws_enabled and refreshes in-memory Lark bot registration.
+func (c *AgentController) SetLarkIMWsEnabled(agentID int64, enabled bool) error {
+	full, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if full == nil || full.RuntimeProfile == nil {
+		return errors.New("agent runtime profile missing")
+	}
+	if full.RuntimeProfile.IMEnabled != "lark" {
+		return errors.New("agent im is not lark")
+	}
+	v := enabled
+	full.RuntimeProfile.IMConfig.WsEnabled = &v
+	if _, err := c.agentService.UpdateAgent(agentID, &schema.UpdateAgentRequest{
+		RuntimeProfile: full.RuntimeProfile,
+	}); err != nil {
+		return err
+	}
+	updated, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if updated != nil {
+		c.registerLarkBotIfNeeded(updated)
+	}
+	return nil
+}
+
 func (c *AgentController) UnregisterLarkBotForAgent(agentID int64) {
 	c.unregisterLarkBotIfNeeded(agentID)
 }
 
 func (c *AgentController) RegisterTelegramBotForAgent(agent *schema.AgentWithRuntime) {
-	c.registerLarkBotIfNeeded(agent)
+	c.registerIMBotIfNeeded(agent)
+}
+
+// SetTelegramIMWsEnabled persists im_config.ws_enabled and refreshes in-memory Telegram bot registration.
+func (c *AgentController) SetTelegramIMWsEnabled(agentID int64, enabled bool) error {
+	full, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if full == nil || full.RuntimeProfile == nil {
+		return errors.New("agent runtime profile missing")
+	}
+	if full.RuntimeProfile.IMEnabled != "telegram" {
+		return errors.New("agent im is not telegram")
+	}
+	v := enabled
+	full.RuntimeProfile.IMConfig.WsEnabled = &v
+	if _, err := c.agentService.UpdateAgent(agentID, &schema.UpdateAgentRequest{
+		RuntimeProfile: full.RuntimeProfile,
+	}); err != nil {
+		return err
+	}
+	updated, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if updated != nil {
+		c.registerIMBotIfNeeded(updated)
+	}
+	return nil
 }
 
 func (c *AgentController) UnregisterTelegramBotForAgent(agentID int64) {
-	c.unregisterLarkBotIfNeeded(agentID)
+	c.unregisterIMBotIfNeeded(agentID)
+}
+
+func (c *AgentController) RegisterDingtalkBotForAgent(agent *schema.AgentWithRuntime) {
+	c.registerIMBotIfNeeded(agent)
+}
+
+// SetDingtalkIMWsEnabled persists im_config.ws_enabled and refreshes in-memory DingTalk bot registration.
+func (c *AgentController) SetDingtalkIMWsEnabled(agentID int64, enabled bool) error {
+	full, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if full == nil || full.RuntimeProfile == nil {
+		return errors.New("agent runtime profile missing")
+	}
+	if full.RuntimeProfile.IMEnabled != "dingtalk" {
+		return errors.New("agent im is not dingtalk")
+	}
+	v := enabled
+	full.RuntimeProfile.IMConfig.WsEnabled = &v
+	if _, err := c.agentService.UpdateAgent(agentID, &schema.UpdateAgentRequest{
+		RuntimeProfile: full.RuntimeProfile,
+	}); err != nil {
+		return err
+	}
+	updated, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if updated != nil {
+		c.registerIMBotIfNeeded(updated)
+	}
+	return nil
+}
+
+func (c *AgentController) UnregisterDingtalkBotForAgent(agentID int64) {
+	c.unregisterIMBotIfNeeded(agentID)
 }
 
 func (c *AgentController) getUserForMiddleware(userID int64) (*auth.User, error) {
@@ -118,6 +221,9 @@ func (c *AgentController) RegisterRoutes(r *server.Hertz) {
 	agents.GET("/:id/capability-tree", c.GetCapabilityTree)
 	agents.PUT("/:id/capability-tree", c.UpdateCapabilityTree)
 	agents.GET("/:id/capabilities", c.GetCapabilities)
+	agents.POST("/:id/im/lark/register-app", c.StartLarkRegisterAppSession)
+	agents.GET("/:id/im/lark/register-app/:sessionId", c.GetLarkRegisterAppSession)
+	agents.DELETE("/:id/im/lark/register-app/:sessionId", c.CancelLarkRegisterAppSession)
 }
 
 // @Summary List all agents

@@ -8,9 +8,9 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
-	"github.com/fisk086/sya/internal/auth"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
+	"github.com/fisk086/aiops/internal/auth"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
 )
 
 type GraphWorkflowController struct {
@@ -25,6 +25,7 @@ func (ctrl *GraphWorkflowController) RegisterRoutes(r *server.Hertz) {
 	v1 := r.Group("/api/v1")
 
 	v1.GET("/workflows/graph", ctrl.ListDefinitions)
+	v1.GET("/workflows/graph/tasks", ctrl.ListTasks)
 	v1.GET("/workflows/graph/:id", ctrl.GetDefinition)
 	v1.GET("/workflows/graph/key/:key", ctrl.GetDefinitionByKey)
 	v1.POST("/workflows/graph", ctrl.CreateDefinition)
@@ -42,6 +43,11 @@ func (ctrl *GraphWorkflowController) ListDefinitions(c context.Context, ctx *app
 		return
 	}
 	ctx.JSON(consts.StatusOK, schema.SuccessResponse(defs))
+}
+
+func (ctrl *GraphWorkflowController) ListTasks(c context.Context, ctx *app.RequestContext) {
+	tasks := ctrl.graphService.ListTaskDefinitions()
+	ctx.JSON(consts.StatusOK, schema.SuccessResponse(tasks))
 }
 
 func (ctrl *GraphWorkflowController) GetDefinition(c context.Context, ctx *app.RequestContext) {

@@ -10,13 +10,13 @@ import (
 	"unicode/utf8"
 
 	einoschema "github.com/cloudwego/eino/schema"
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/chathistory"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/notify"
-	apischema "github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/workflow"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/chathistory"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/notify"
+	apischema "github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/workflow"
 	"github.com/go-co-op/gocron/v2"
 )
 
@@ -375,10 +375,7 @@ func (s *Scheduler) executeWorkflow(ctx context.Context, sch *model.Schedule, ow
 		return "", nil
 	}
 
-	if s, ok := result.Output.(string); ok {
-		return s, nil
-	}
-	return fmt.Sprintf("%v", result.Output), nil
+	return workflow.FormatWorkflowOutput(result.Output), nil
 }
 
 func (s *Scheduler) executeAgent(ctx context.Context, sch *model.Schedule, ownerForRun string) (string, error) {

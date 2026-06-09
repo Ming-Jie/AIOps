@@ -3,23 +3,26 @@ package immanager
 import (
 	"context"
 
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/larkbot"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/storage"
-	"github.com/fisk086/sya/internal/telegrambot"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/dingtalkbot"
+	"github.com/fisk086/aiops/internal/larkbot"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/storage"
+	"github.com/fisk086/aiops/internal/telegrambot"
 )
 
 type IMManager struct {
-	larkClient     *larkbot.Client
-	telegramClient *telegrambot.Client
+	larkClient      *larkbot.Client
+	telegramClient  *telegrambot.Client
+	dingtalkClient  *dingtalkbot.Client
 }
 
 func NewIMManager() *IMManager {
 	return &IMManager{
 		larkClient:     larkbot.Global(),
 		telegramClient: telegrambot.Global(),
+		dingtalkClient: dingtalkbot.Global(),
 	}
 }
 
@@ -28,16 +31,27 @@ func (m *IMManager) RegisterAgent(agent *schema.AgentWithRuntime, runtime *agent
 		return nil
 	}
 
-	switch agent.RuntimeProfile.IMEnabled {
+	enabled := agent.RuntimeProfile.IMEnabled
+	if enabled != "lark" {
+		m.unregisterLarkBot(agent.ID)
+	}
+	if enabled != "telegram" {
+		m.unregisterTelegramBot(agent.ID)
+	}
+	if enabled != "dingtalk" {
+		m.unregisterDingtalkBot(agent.ID)
+	}
+
+	switch enabled {
 	case "lark":
 		// Always register credentials in the Lark client when IM is configured so manual WS start works.
 		// LarkRegisterLongConnection (ws_enabled) only controls NoAutoStartWS / global Start() — see registerLarkBot.
 		return m.registerLarkBot(agent, runtime)
 	case "telegram":
 		return m.registerTelegramBot(agent, runtime)
+	case "dingtalk":
+		return m.registerDingtalkBot(agent, runtime)
 	default:
-		m.unregisterLarkBot(agent.ID)
-		m.unregisterTelegramBot(agent.ID)
 		return nil
 	}
 }
@@ -45,6 +59,7 @@ func (m *IMManager) RegisterAgent(agent *schema.AgentWithRuntime, runtime *agent
 func (m *IMManager) UnregisterAgent(agentID int64) {
 	m.unregisterLarkBot(agentID)
 	m.unregisterTelegramBot(agentID)
+	m.unregisterDingtalkBot(agentID)
 }
 
 func (m *IMManager) StartAll(ctx context.Context) {
@@ -60,11 +75,18 @@ func (m *IMManager) StartAll(ctx context.Context) {
 		}()
 		logger.Info("im manager: telegrambot started", "bot_count", m.telegramClient.GetBotCount())
 	}
+	if m.dingtalkClient.GetBotCount() > 0 {
+		go func() {
+			m.dingtalkClient.Start(ctx)
+		}()
+		logger.Info("im manager: dingtalkbot started", "bot_count", m.dingtalkClient.GetBotCount())
+	}
 }
 
 func (m *IMManager) StopAll() {
 	m.larkClient.Stop()
 	m.telegramClient.Stop()
+	m.dingtalkClient.Stop()
 	logger.Info("im manager: all im services stopped")
 }
 
@@ -117,6 +139,7 @@ func (m *IMManager) registerLarkBot(agent *schema.AgentWithRuntime, runtime *age
 		InvokeTimeout: 120,
 		OpenAPIDomain: larkbot.OpenAPIDomainFromIMConfig(imConfig),
 		NoAutoStartWS: !imConfig.LarkRegisterLongConnection(),
+		AllowedUsers:  imConfig.AllowedUsers,
 	}
 
 	if err := m.larkClient.RegisterBot(botCfg, runtime); err != nil {
@@ -127,6 +150,11 @@ func (m *IMManager) registerLarkBot(agent *schema.AgentWithRuntime, runtime *age
 				return err2
 			}
 			logger.Info("im manager: lark bot config updated", "agent_id", agent.ID, "app_id", imConfig.AppID)
+			if imConfig.LarkRegisterLongConnection() {
+				if err := m.larkClient.StartBot(context.Background(), imConfig.AppID); err != nil {
+					logger.Warn("im manager: lark ws auto-start failed", "agent_id", agent.ID, "app_id", imConfig.AppID, "err", err)
+				}
+			}
 			return nil
 		}
 		logger.Warn("im manager: failed to register lark bot", "agent_id", agent.ID, "err", err)
@@ -134,6 +162,11 @@ func (m *IMManager) registerLarkBot(agent *schema.AgentWithRuntime, runtime *age
 	}
 
 	logger.Info("im manager: lark bot registered", "agent_id", agent.ID, "app_id", imConfig.AppID, "open_domain", botCfg.OpenAPIDomain)
+	if imConfig.LarkRegisterLongConnection() {
+		if err := m.larkClient.StartBot(context.Background(), imConfig.AppID); err != nil {
+			logger.Warn("im manager: lark ws auto-start failed", "agent_id", agent.ID, "app_id", imConfig.AppID, "err", err)
+		}
+	}
 	return nil
 }
 
@@ -162,6 +195,8 @@ func (m *IMManager) registerTelegramBot(agent *schema.AgentWithRuntime, runtime 
 		InvokeTimeout:  120,
 		WebhookEnabled: imConfig.WebhookURL != "",
 		WebhookURL:     imConfig.WebhookURL,
+		WsEnabled:      imConfig.LarkRegisterLongConnection(),
+		AllowedUsers:   imConfig.AllowedUsers,
 	}
 
 	if err := m.telegramClient.RegisterBot(botCfg, runtime); err != nil {
@@ -172,6 +207,11 @@ func (m *IMManager) registerTelegramBot(agent *schema.AgentWithRuntime, runtime 
 				return err2
 			}
 			logger.Info("im manager: telegram bot config updated", "agent_id", agent.ID)
+			if imConfig.LarkRegisterLongConnection() {
+				if err := m.telegramClient.StartBot(context.Background(), imConfig.TelegramToken); err != nil {
+					logger.Warn("im manager: telegram auto-start failed", "agent_id", agent.ID, "err", err)
+				}
+			}
 			return nil
 		}
 		logger.Warn("im manager: failed to register telegram bot", "agent_id", agent.ID, "err", err)
@@ -179,6 +219,11 @@ func (m *IMManager) registerTelegramBot(agent *schema.AgentWithRuntime, runtime 
 	}
 
 	logger.Info("im manager: telegram bot registered", "agent_id", agent.ID)
+	if imConfig.LarkRegisterLongConnection() {
+		if err := m.telegramClient.StartBot(context.Background(), imConfig.TelegramToken); err != nil {
+			logger.Warn("im manager: telegram auto-start failed", "agent_id", agent.ID, "err", err)
+		}
+	}
 	return nil
 }
 
@@ -188,6 +233,62 @@ func (m *IMManager) unregisterTelegramBot(agentID int64) {
 		if entry.Config.AgentID == agentID {
 			m.telegramClient.UnregisterBot(token)
 			logger.Info("im manager: telegram bot unregistered", "agent_id", agentID, "token_prefix", token[:8])
+			break
+		}
+	}
+}
+
+func (m *IMManager) registerDingtalkBot(agent *schema.AgentWithRuntime, runtime *agent.Runtime) error {
+	imConfig := agent.RuntimeProfile.IMConfig
+	if imConfig.AppID == "" || imConfig.AppSecret == "" {
+		logger.Warn("im manager: dingtalk bot config incomplete", "agent_id", agent.ID)
+		return nil
+	}
+
+	botCfg := &dingtalkbot.BotConfig{
+		AppID:           imConfig.AppID,
+		AppSecret:       imConfig.AppSecret,
+		AgentID:         agent.ID,
+		InvokeTimeout:   120,
+		NoAutoStartWS:   !imConfig.LarkRegisterLongConnection(),
+		AllowedUsers:    imConfig.AllowedUsers,
+		RequireMention: true,
+	}
+
+	if err := m.dingtalkClient.RegisterBot(botCfg, runtime); err != nil {
+		existing := m.dingtalkClient.GetBotConfig(imConfig.AppID)
+		if existing != nil && existing.AgentID == agent.ID {
+			if err2 := m.dingtalkClient.UpdateBotConfig(botCfg); err2 != nil {
+				logger.Warn("im manager: failed to update dingtalk bot", "agent_id", agent.ID, "err", err2)
+				return err2
+			}
+			logger.Info("im manager: dingtalk bot config updated", "agent_id", agent.ID, "app_id", imConfig.AppID)
+			if imConfig.LarkRegisterLongConnection() {
+				if err := m.dingtalkClient.StartBot(context.Background(), imConfig.AppID); err != nil {
+					logger.Warn("im manager: dingtalk stream auto-start failed", "agent_id", agent.ID, "app_id", imConfig.AppID, "err", err)
+				}
+			}
+			return nil
+		}
+		logger.Warn("im manager: failed to register dingtalk bot", "agent_id", agent.ID, "err", err)
+		return err
+	}
+
+	logger.Info("im manager: dingtalk bot registered", "agent_id", agent.ID, "app_id", imConfig.AppID)
+	if imConfig.LarkRegisterLongConnection() {
+		if err := m.dingtalkClient.StartBot(context.Background(), imConfig.AppID); err != nil {
+			logger.Warn("im manager: dingtalk stream auto-start failed", "agent_id", agent.ID, "app_id", imConfig.AppID, "err", err)
+		}
+	}
+	return nil
+}
+
+func (m *IMManager) unregisterDingtalkBot(agentID int64) {
+	bots := m.dingtalkClient.GetBots()
+	for appID, entry := range bots {
+		if entry.Config.AgentID == agentID {
+			m.dingtalkClient.UnregisterBot(appID)
+			logger.Info("im manager: dingtalk bot unregistered", "agent_id", agentID, "app_id", appID)
 			break
 		}
 	}

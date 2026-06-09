@@ -612,7 +612,7 @@ func fetchSecurityHeaders(ctx context.Context, rawURL string) (http.Header, stri
 	if err != nil {
 		return nil, "", "", err
 	}
-	req.Header.Set("User-Agent", "sya-security-headers-checker/1.0")
+	req.Header.Set("User-Agent", "aiops-security-headers-checker/1.0")
 	resp, err := client.Do(req)
 	if err == nil && resp != nil && resp.StatusCode != http.StatusMethodNotAllowed {
 		defer resp.Body.Close()
@@ -625,7 +625,7 @@ func fetchSecurityHeaders(ctx context.Context, rawURL string) (http.Header, stri
 	if err != nil {
 		return nil, "", "", err
 	}
-	req.Header.Set("User-Agent", "sya-security-headers-checker/1.0")
+	req.Header.Set("User-Agent", "aiops-security-headers-checker/1.0")
 	resp, err = client.Do(req)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("request failed: %w", err)

@@ -10,9 +10,9 @@ import (
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 	einoschema "github.com/cloudwego/eino/schema"
 	jsonschema "github.com/eino-contrib/jsonschema"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/mcp"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/mcp"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // mcpStorage is the subset of storage needed to resolve MCP tools for an agent.

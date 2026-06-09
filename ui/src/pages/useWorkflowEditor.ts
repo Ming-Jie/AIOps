@@ -3,13 +3,16 @@ import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import { api } from 'boot/axios'
 import type {
-  APIResponse, WorkflowDefinition, WorkflowNode, WorkflowEdge,
+  APIResponse, WorkflowDefinition,
   CreateWorkflowDefinitionRequest, UpdateWorkflowDefinitionRequest,
   WorkflowExecution, ExecuteWorkflowResponse
 } from 'src/api/types'
 import type { Connection, Edge, Node } from '@vue-flow/core'
 import { getNodeType } from './workflow-nodes/index'
 import { getDefaultConfig } from './workflow-nodes/configs'
+import { useWorkflowHistory } from 'src/composables/useWorkflowHistory'
+import { dslFromGraph, seedGraph } from 'src/lib/workflowDsl'
+import { getNodeOutputFields as getOutputFields } from 'src/lib/upstreamOutputs'
 
 let nodeCounter = 0
 
@@ -51,6 +54,15 @@ export function useWorkflowEditor () {
 
   const selectedNodeData = ref<Record<string, unknown>>({})
 
+  const {
+    canUndo,
+    canRedo,
+    pushSnapshot,
+    undo: historyUndo,
+    redo: historyRedo,
+    reset: resetHistory
+  } = useWorkflowHistory()
+
   watch(selectedNodeId, (newId) => {
     if (!newId) {
       selectedNodeData.value = {}
@@ -85,7 +97,16 @@ export function useWorkflowEditor () {
     }
   }
 
+  function undo () {
+    historyUndo(nodes, edges)
+  }
+
+  function redo () {
+    historyRedo(nodes, edges)
+  }
+
   function openEditor (wf?: WorkflowDefinition) {
+    resetHistory()
     if (wf) {
       currentWorkflow.value = wf
       workflowName.value = wf.name
@@ -130,18 +151,26 @@ export function useWorkflowEditor () {
         style: e.condition ? { stroke: '#FF9800' } : undefined,
         data: { condition: e.condition }
       })) as Edge[]
+      takeSnapshot()
     } else {
       currentWorkflow.value = null
       workflowName.value = ''
       workflowKey.value = newWorkflowKey()
       workflowDesc.value = ''
-      nodes.value = []
-      edges.value = []
+      const seed = seedGraph()
+      nodes.value = seed.nodes
+      edges.value = seed.edges
+      takeSnapshot()
     }
     activeTab.value = 'editor'
   }
 
+  function takeSnapshot () {
+    pushSnapshot(nodes.value, edges.value)
+  }
+
   function addNode (type: string, position: { x: number; y: number }) {
+    takeSnapshot()
     nodeCounter++
     const id = `node_${nodeCounter}_${Date.now()}`
     const nodeTypeInfo = getNodeType(type)
@@ -187,6 +216,8 @@ export function useWorkflowEditor () {
     )
     if (exists) return
 
+    takeSnapshot()
+
     const edge: Edge = {
       id: `edge_${connection.source}_${connection.target}_${Date.now()}`,
       source: connection.source,
@@ -219,6 +250,7 @@ export function useWorkflowEditor () {
   function deleteNodeById (nodeId: string) {
     if (!nodeId) return
     if (!nodes.value.some(n => n.id === nodeId)) return
+    takeSnapshot()
     nodes.value = nodes.value.filter(n => n.id !== nodeId)
     edges.value = edges.value.filter(
       e => e.source !== nodeId && e.target !== nodeId
@@ -281,18 +313,37 @@ export function useWorkflowEditor () {
     }
     const key = (workflowKey.value || '').trim() || newWorkflowKey()
     workflowKey.value = key
+
+    const dsl = dslFromGraph(nodes.value, edges.value)
     return {
       key,
       name: workflowName.value.trim(),
       description: workflowDesc.value.trim(),
       kind: 'graph',
-      nodes: toWorkflowNodes(),
-      edges: toWorkflowEdges(),
+      nodes: dsl.nodes.map(n => ({
+        id: n.id,
+        type: n.type,
+        label: n.label,
+        agent_id: n.agent_id,
+        config: n.config,
+        position: n.position,
+        input_schema: n.input_schema ?? undefined,
+        output_schema: n.output_schema ?? undefined
+      })),
+      edges: dsl.edges.map(e => ({
+        id: e.id,
+        source_node_id: e.source,
+        target_node_id: e.target,
+        source_port: e.source_handle,
+        target_port: e.target_handle,
+        label: e.label,
+        condition: e.condition
+      })),
       is_active: true
     }
   }
 
-  /** Persist graph to server. When silent, does not switch tab or show success toast (for run-before-save). */
+  /** Persist graph to server. When silent, skips success toast (for run-before-save). */
   async function persistWorkflowGraph (options: { silent?: boolean } = {}): Promise<boolean> {
     const body = buildSaveBody()
     if (!body) return false
@@ -302,7 +353,6 @@ export function useWorkflowEditor () {
         await api.put(`/workflows/graph/${currentWorkflow.value.id}`, body)
         if (!options.silent) {
           $q.notify({ type: 'positive', message: t('saveOk') })
-          activeTab.value = 'list'
           await loadWorkflows()
         }
         return true
@@ -317,7 +367,6 @@ export function useWorkflowEditor () {
       }
       if (!options.silent) {
         $q.notify({ type: 'positive', message: t('createOk') })
-        activeTab.value = 'list'
         await loadWorkflows()
       }
       return true
@@ -330,42 +379,8 @@ export function useWorkflowEditor () {
     }
   }
 
-  function toWorkflowNodes (): WorkflowNode[] {
-    return nodes.value.map(n => {
-      const d = n.data as Record<string, unknown>
-      const nodeType = (d.nodeType as string) || 'agent'
-      return {
-        id: n.id,
-        type: nodeType,
-        label: (d.label as string) || '',
-        agent_id: resolveNodeAgentId(d, nodeType),
-        config: (d.config as Record<string, unknown>) || {},
-        position: n.position
-          ? { x: n.position.x, y: n.position.y }
-          : undefined,
-        input_schema: d.inputSchema as Record<string, unknown> | undefined,
-        output_schema: d.outputSchema as Record<string, unknown> | undefined
-      }
-    })
-  }
-
-  function toWorkflowEdges (): WorkflowEdge[] {
-    return edges.value.map(e => {
-      const lbl = e.label
-      let labelStr: string | undefined
-      if (typeof lbl === 'string') {
-        labelStr = lbl || undefined
-      }
-      return {
-        id: e.id,
-        source_node_id: e.source,
-        target_node_id: e.target,
-        source_port: e.sourceHandle || undefined,
-        target_port: e.targetHandle || undefined,
-        condition: (e.data as Record<string, unknown>)?.condition as string | undefined,
-        label: labelStr
-      }
-    })
+  async function silentSave (): Promise<boolean> {
+    return persistWorkflowGraph({ silent: true })
   }
 
   async function saveWorkflow () {
@@ -539,38 +554,10 @@ export function useWorkflowEditor () {
 
     const data = node.data as Record<string, unknown>
     const nodeType = data.nodeType as string
-    const outputSchema = data.outputSchema as Record<string, unknown> | undefined
+    const config = (data.config as Record<string, unknown>) || {}
+    const outputSchema = data.outputSchema as Record<string, unknown> | null | undefined
 
-    const defaultFields: Record<string, string[]> = {
-      start: ['message', 'type'],
-      end: ['output', 'type'],
-      input: ['content'],
-      output: ['content'],
-      agent: ['content', 'type'],
-      llm: ['content', 'type'],
-      tool: ['tool', 'input', 'result', 'error', 'type'],
-      mcp: ['tool_name', 'arguments', 'result', 'type'],
-      http: ['body', 'status_code', 'url', 'method', 'error', 'type'],
-      code: ['output', 'error', 'language', 'type'],
-      condition: ['result', 'branch', 'condition', 'type'],
-      knowledge: ['results', 'query', 'top_k', 'note', 'type'],
-      template: ['output', 'type'],
-      variable: ['assigned', 'type'],
-      merge: ['outputs', 'result', 'mode', 'type'],
-      loop: ['items', 'count', 'current_index', 'mode', 'type'],
-      branch: ['selected_node', 'result', 'condition', 'type'],
-      parallel: ['node_ids', 'timeout_ms', 'note', 'type'],
-      wait: ['status', 'elapsed', 'type']
-    }
-
-    const fields = defaultFields[nodeType] || ['content']
-
-    if (outputSchema?.properties) {
-      const props = outputSchema.properties as Record<string, unknown>
-      return Array.from(new Set([...fields, ...Object.keys(props)]))
-    }
-
-    return fields
+    return getOutputFields(nodeType, config, outputSchema)
   }
 
   onMounted(() => {
@@ -586,7 +573,6 @@ export function useWorkflowEditor () {
     workflowList,
     currentWorkflow,
     workflowName,
-    workflowDesc,
     nodes,
     edges,
     selectedNodeId,
@@ -605,6 +591,7 @@ export function useWorkflowEditor () {
     deleteNodeById,
     deleteEdge,
     saveWorkflow,
+    silentSave,
     confirmDelete,
     onTabChange,
     loadWorkflows,
@@ -618,6 +605,11 @@ export function useWorkflowEditor () {
     executeWorkflowDirect,
     clearWorkflowRunResults,
     loadExecutionHistory,
-    getExecutionDetail
+    getExecutionDetail,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    takeSnapshot
   }
 }

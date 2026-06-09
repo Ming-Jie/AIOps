@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/logger"
+	einoschema "github.com/cloudwego/eino/schema"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/imhistory"
+	"github.com/fisk086/aiops/internal/imoutbound"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/larksuite/oapi-sdk-go/v3/channel/safety"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"github.com/larksuite/oapi-sdk-go/v3/ws"
 )
@@ -25,6 +31,8 @@ type BotConfig struct {
 	// NoAutoStartWS when true, Start() (server boot / global start) skips opening WebSocket for this app;
 	// StartBot may still be used from the API for manual per-agent start.
 	NoAutoStartWS bool
+	// AllowedUsers: Lark open_id values permitted to message this bot. Empty = allow all.
+	AllowedUsers []string
 }
 
 type BotEntry struct {
@@ -38,12 +46,15 @@ type BotEntry struct {
 var botWSSessionSeq uint64
 
 type Client struct {
-	mu      sync.RWMutex
-	bots    map[string]*BotEntry
-	running bool
+	mu       sync.RWMutex
+	bots     map[string]*BotEntry
+	running  bool
+	msgDedup *safety.DedupCache
+	outbound *imoutbound.Store
 }
 
 var globalClient *Client
+var globalRegisterSessions *RegisterAppSessionManager
 
 func Global() *Client {
 	if globalClient == nil {
@@ -52,9 +63,17 @@ func Global() *Client {
 	return globalClient
 }
 
+func GlobalRegisterSessions() *RegisterAppSessionManager {
+	if globalRegisterSessions == nil {
+		globalRegisterSessions = NewRegisterAppSessionManager()
+	}
+	return globalRegisterSessions
+}
+
 func NewClient() *Client {
 	return &Client{
-		bots: make(map[string]*BotEntry),
+		bots:     make(map[string]*BotEntry),
+		msgDedup: safety.NewDedupCache(10000, time.Hour),
 	}
 }
 
@@ -87,11 +106,9 @@ func (c *Client) UnregisterBot(appID string) {
 
 	entry, ok := c.bots[appID]
 	if ok {
-		if entry != nil && entry.wsCancel != nil {
-			entry.wsCancel()
-		}
+		closeBotWSEntry(entry)
 		delete(c.bots, appID)
-		logger.Info("larkbot: bot unregistered (ws client will disconnect when context is cancelled)", "app_id", appID)
+		logger.Info("larkbot: bot unregistered (ws client closed)", "app_id", appID)
 	}
 }
 
@@ -117,12 +134,23 @@ func (c *Client) UpdateBotConfig(cfg *BotConfig) error {
 	return nil
 }
 
-func newLarkWSClient(cfg *BotConfig) *ws.Client {
+func (c *Client) newLarkWSClient(cfg *BotConfig) *ws.Client {
 	domain := openAPIDomainFromBot(cfg)
+	handler := larkdispatcher.NewEventDispatcher("", "").
+		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+			return c.handleMessage(ctx, event)
+		}).
+		OnP2MessageReactionCreatedV1(func(ctx context.Context, event *larkim.P2MessageReactionCreatedV1) error {
+			return c.handleReactionCreated(ctx, event)
+		}).
+		OnP2MessageReactionDeletedV1(func(ctx context.Context, event *larkim.P2MessageReactionDeletedV1) error {
+			return c.handleReactionDeleted(ctx, event)
+		})
 	return ws.NewClient(cfg.AppID, cfg.AppSecret,
 		ws.WithDomain(domain),
 		ws.WithLogLevel(larkcore.LogLevelInfo),
 		ws.WithAutoReconnect(true),
+		ws.WithEventHandler(handler),
 	)
 }
 
@@ -133,13 +161,9 @@ func (c *Client) RefreshBot(ctx context.Context, appID string) error {
 		c.mu.Unlock()
 		return fmt.Errorf("bot not found for app_id: %s", appID)
 	}
-	if entry.wsCancel != nil {
-		entry.wsCancel()
-		entry.wsClient = nil
-		entry.wsCancel = nil
-	}
+	closeBotWSEntry(entry)
 	cfg := entry.Config
-	wsClient := newLarkWSClient(cfg)
+	wsClient := c.newLarkWSClient(cfg)
 	ctx2, cancel := context.WithCancel(ctx)
 	sess := atomic.AddUint64(&botWSSessionSeq, 1)
 	entry.wsClient = wsClient
@@ -227,7 +251,7 @@ func (c *Client) StartBot(parentCtx context.Context, appID string) error {
 		return nil
 	}
 	cfg := entry.Config
-	wsClient := newLarkWSClient(cfg)
+	wsClient := c.newLarkWSClient(cfg)
 	ctx, cancel := context.WithCancel(parentCtx)
 	sess := atomic.AddUint64(&botWSSessionSeq, 1)
 	entry.wsClient = wsClient
@@ -253,6 +277,22 @@ func (c *Client) StartBot(parentCtx context.Context, appID string) error {
 	return nil
 }
 
+// closeBotWSEntry closes the WS client before cancelling context so auto-reconnect
+// cannot race with an in-flight disconnect handler.
+func closeBotWSEntry(entry *BotEntry) {
+	if entry == nil {
+		return
+	}
+	if entry.wsClient != nil {
+		entry.wsClient.Close()
+		entry.wsClient = nil
+	}
+	if entry.wsCancel != nil {
+		entry.wsCancel()
+		entry.wsCancel = nil
+	}
+}
+
 // StopBot stops the WebSocket for one app_id without removing registration.
 func (c *Client) StopBot(appID string) {
 	c.mu.Lock()
@@ -261,11 +301,7 @@ func (c *Client) StopBot(appID string) {
 	if !ok || entry == nil {
 		return
 	}
-	if entry.wsCancel != nil {
-		entry.wsCancel()
-	}
-	entry.wsClient = nil
-	entry.wsCancel = nil
+	closeBotWSEntry(entry)
 	c.syncRunningFlag()
 	logger.Info("larkbot: ws client stopped for app", "app_id", appID)
 }
@@ -273,12 +309,8 @@ func (c *Client) StopBot(appID string) {
 func (c *Client) Stop() {
 	c.mu.Lock()
 	for appID := range c.bots {
-		entry := c.bots[appID]
-		if entry != nil && entry.wsCancel != nil {
-			entry.wsCancel()
-			entry.wsClient = nil
-			entry.wsCancel = nil
-		}
+		closeBotWSEntry(c.bots[appID])
+		logger.Info("larkbot: ws client stopped for app", "app_id", appID)
 	}
 	c.syncRunningFlag()
 	c.mu.Unlock()
@@ -346,7 +378,7 @@ func (c *Client) IsRunning() bool {
 	return c.running
 }
 
-func (c *Client) handleMessage(event *larkim.P2MessageReceiveV1) error {
+func (c *Client) handleMessage(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil {
 		return nil
 	}
@@ -372,6 +404,17 @@ func (c *Client) handleMessage(event *larkim.P2MessageReceiveV1) error {
 		return nil
 	}
 
+	appID := getAppID(event)
+	cfg := c.GetBotConfig(appID)
+	if cfg != nil && !c.isSenderAllowed(senderID, cfg.AllowedUsers) {
+		logger.Info("larkbot: sender not in allowed_users",
+			"sender_id", senderID,
+			"app_id", appID,
+			"allowed_count", len(cfg.AllowedUsers),
+		)
+		return nil
+	}
+
 	var userInput string
 	msgType := getStringPtr(msg.MessageType)
 	switch msgType {
@@ -386,30 +429,73 @@ func (c *Client) handleMessage(event *larkim.P2MessageReceiveV1) error {
 		return nil
 	}
 
-	appID := getAppID(event)
+	if messageID != "" && c.msgDedup != nil && c.msgDedup.IsDuplicate(messageID) {
+		logger.Info("larkbot: duplicate message ignored", "message_id", messageID, "app_id", appID)
+		return nil
+	}
+
+	// Ack WS quickly; reaction + LLM + reply run async to avoid Lark event redelivery on slow handlers.
+	go c.processIncomingMessage(appID, messageID, senderID, userInput)
+	return nil
+}
+
+func (c *Client) processIncomingMessage(appID, messageID, senderID, userInput string) {
+	if !c.IsBotWSRunning(appID) {
+		return
+	}
+	cfg := c.GetBotConfig(appID)
+	if cfg != nil && messageID != "" {
+		c.addAckReaction(context.Background(), cfg, messageID)
+	}
 
 	runtime := c.GetBotRuntime(appID)
 	if runtime == nil {
 		logger.Error("larkbot: no bot runtime for app_id", "app_id", appID)
-		return nil
+		return
+	}
+	if cfg == nil {
+		cfg = c.GetBotConfig(appID)
+	}
+	if cfg == nil {
+		logger.Error("larkbot: no bot config for app_id", "app_id", appID)
+		return
 	}
 
-	cfg := c.GetBotConfig(appID)
-	invokeCtx := context.Background()
-	respText, err := c.invokeAgent(invokeCtx, runtime, cfg, userInput, senderID)
+	ctx := context.Background()
+	var sessionID string
+	var history []*einoschema.Message
+	imUserID := imhistory.FormatIMUserID("lark", senderID)
+	if rec := imhistory.GlobalRecorder(); rec != nil && senderID != "" {
+		sessionID, history = rec.PrepareConversation(ctx, "lark", cfg.AgentID, senderID, 20)
+	}
+	if sessionID != "" {
+		ctx = imoutbound.WithScope(ctx, cfg.AgentID, sessionID)
+	}
+
+	respText, err := c.invokeAgent(ctx, runtime, cfg, userInput, senderID, sessionID, history)
 	if err != nil {
 		respText = fmt.Sprintf("处理消息失败: %v", err)
 		logger.Error("larkbot: invoke agent failed", "err", err)
 	}
 
-	if messageID != "" {
-		logger.Info("larkbot: reply message", "root_id", messageID, "text", respText)
+	scope := imoutbound.Scope{AgentID: cfg.AgentID, SessionID: sessionID}
+	replyText, fileNames := imoutbound.ParseFileMarkers(respText)
+
+	if messageID != "" && strings.TrimSpace(replyText) != "" {
+		if err := c.replyMessage(ctx, cfg, messageID, replyText); err != nil {
+			logger.Error("larkbot: reply send failed", "message_id", messageID, "err", err)
+		}
+	}
+	if messageID != "" && len(fileNames) > 0 {
+		c.sendOutboundFiles(ctx, cfg, messageID, scope, fileNames)
 	}
 
-	return nil
+	if rec := imhistory.GlobalRecorder(); rec != nil && sessionID != "" {
+		rec.RecordTurnAsync(cfg.AgentID, sessionID, imUserID, userInput, respText)
+	}
 }
 
-func (c *Client) invokeAgent(ctx context.Context, runtime *agent.Runtime, cfg *BotConfig, userInput, larkUserID string) (string, error) {
+func (c *Client) invokeAgent(ctx context.Context, runtime *agent.Runtime, cfg *BotConfig, userInput, larkUserID, sessionID string, history []*einoschema.Message) (string, error) {
 	timeout := cfg.InvokeTimeout
 	if timeout <= 0 {
 		timeout = 120
@@ -417,7 +503,8 @@ func (c *Client) invokeAgent(ctx context.Context, runtime *agent.Runtime, cfg *B
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	resp, err := runtime.Chat(ctx, cfg.AgentID, userInput, "", larkUserID)
+	memContext := larkFileSendSystemHint()
+	resp, err := runtime.ChatWithMemoryContext(ctx, cfg.AgentID, userInput, "", "", memContext, sessionID, larkUserID, history)
 	return resp, err
 }
 
@@ -473,4 +560,20 @@ func getAppID(event *larkim.P2MessageReceiveV1) string {
 		return event.EventV2Base.Header.AppID
 	}
 	return ""
+}
+
+func (c *Client) isSenderAllowed(senderOpenID string, allowed []string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	senderOpenID = strings.TrimSpace(senderOpenID)
+	if senderOpenID == "" {
+		return false
+	}
+	for _, raw := range allowed {
+		if strings.TrimSpace(raw) == senderOpenID {
+			return true
+		}
+	}
+	return false
 }

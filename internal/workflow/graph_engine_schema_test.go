@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/model"
 )
 
 func TestValidateInputSchemaNoMappingDoesNotPanicWhenUserMessageExists(t *testing.T) {

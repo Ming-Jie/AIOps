@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
 	"github.com/google/uuid"
 	"github.com/pgvector/pgvector-go"
 )
@@ -130,10 +130,6 @@ type InMemoryStorage struct {
 	approvalRequests     []*model.ApprovalRequest
 	approvalRequestCount int64
 
-	chatGroups           map[int64]*model.ChatGroup
-	chatGroupCount       int64
-	chatGroupMembers     []*model.ChatGroupMember
-	chatGroupMemberCount int64
 }
 
 func NewInMemoryStorage() *InMemoryStorage {
@@ -154,7 +150,6 @@ func NewInMemoryStorage() *InMemoryStorage {
 		workflowDefKeyToID:   make(map[string]int64),
 		schedules:            make(map[int64]*model.Schedule),
 		roleAgentPermissions: make(map[int64]map[int64]bool),
-		chatGroups:           make(map[int64]*model.ChatGroup),
 	}
 }
 
@@ -806,7 +801,7 @@ func (s *InMemoryStorage) SearchUserProfile(ctx context.Context, userID string, 
 	return s.GetUserProfile(ctx, userID, agentID)
 }
 
-func (s *InMemoryStorage) CreateChatSession(ctx context.Context, agentID int64, userID string, groupID int64) (*schema.ChatSession, error) {
+func (s *InMemoryStorage) CreateChatSession(ctx context.Context, agentID int64, userID string, _ int64) (*schema.ChatSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -821,9 +816,6 @@ func (s *InMemoryStorage) CreateChatSession(ctx context.Context, agentID int64, 
 		Title:     "",
 		CreatedAt: now,
 		UpdatedAt: now,
-	}
-	if groupID > 0 {
-		sess.GroupID = groupID
 	}
 	s.chatSessions = append(s.chatSessions, sess)
 	return &sess, nil
@@ -890,6 +882,40 @@ func (s *InMemoryStorage) DeleteChatSession(ctx context.Context, sessionID strin
 	}
 	s.memories = filtered
 	return nil
+}
+
+func (s *InMemoryStorage) ListChatSessionsByUserPrefix(ctx context.Context, agentID int64, userIDPrefix string, limit, offset int) ([]schema.ChatSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	userIDPrefix = strings.TrimSpace(userIDPrefix)
+	var matched []schema.ChatSession
+	for _, sess := range s.chatSessions {
+		if sess.AgentID != agentID {
+			continue
+		}
+		if userIDPrefix != "" && !strings.HasPrefix(sess.UserID, userIDPrefix) {
+			continue
+		}
+		matched = append(matched, sess)
+	}
+	sort.Slice(matched, func(i, j int) bool {
+		return matched[i].UpdatedAt.After(matched[j].UpdatedAt)
+	})
+	if offset >= len(matched) {
+		return []schema.ChatSession{}, nil
+	}
+	end := offset + limit
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], nil
 }
 
 func (s *InMemoryStorage) ListChatSessions(ctx context.Context, agentID int64, userID string, limit, offset int) ([]schema.ChatSession, error) {
@@ -2323,146 +2349,4 @@ func (s *InMemoryStorage) UpdateApprovalRequest(id int64, status, approverID, co
 	return fmt.Errorf("approval request not found: %d", id)
 }
 
-// Chat Group operations (in-memory stubs)
 
-func (s *InMemoryStorage) CreateChatGroup(ctx context.Context, req *schema.CreateGroupRequest, userID string) (*model.ChatGroup, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.chatGroupCount++
-	now := time.Now()
-	group := &model.ChatGroup{
-		ID:        s.chatGroupCount,
-		Name:      req.Name,
-		CreatedBy: userID,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	s.chatGroups[group.ID] = group
-
-	for _, agentID := range req.AgentIDs {
-		name := ""
-		if ag, ok := s.agents[agentID]; ok {
-			name = ag.Agent.Name
-		}
-		member := model.ChatGroupMember{
-			ID:        s.chatGroupMemberCount,
-			GroupID:   group.ID,
-			AgentID:   agentID,
-			AgentName: name,
-		}
-		s.chatGroupMembers = append(s.chatGroupMembers, &member)
-	}
-
-	return group, nil
-}
-
-func (s *InMemoryStorage) GetChatGroup(ctx context.Context, id int64) (*model.ChatGroup, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	group, ok := s.chatGroups[id]
-	if !ok {
-		return nil, fmt.Errorf("chat group not found: %d", id)
-	}
-
-	cp := *group
-	cp.UpdatedAt = groupLastActivity(s, group.ID, group.CreatedAt)
-	for _, m := range s.chatGroupMembers {
-		if m.GroupID == id {
-			cp.Members = append(cp.Members, *m)
-		}
-	}
-	return &cp, nil
-}
-
-func groupLastActivity(s *InMemoryStorage, groupID int64, fallback time.Time) time.Time {
-	maxT := fallback
-	for i := range s.chatSessions {
-		if s.chatSessions[i].GroupID == groupID && s.chatSessions[i].UpdatedAt.After(maxT) {
-			maxT = s.chatSessions[i].UpdatedAt
-		}
-	}
-	return maxT
-}
-
-func (s *InMemoryStorage) ListChatGroups(ctx context.Context, userID string) ([]*model.ChatGroup, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	result := make([]*model.ChatGroup, 0, len(s.chatGroups))
-	for _, g := range s.chatGroups {
-		cp := *g
-		cp.UpdatedAt = groupLastActivity(s, g.ID, g.CreatedAt)
-		for _, m := range s.chatGroupMembers {
-			if m.GroupID == g.ID {
-				cp.Members = append(cp.Members, *m)
-			}
-		}
-		result = append(result, &cp)
-	}
-	return result, nil
-}
-
-func (s *InMemoryStorage) UpdateChatGroup(ctx context.Context, id int64, req *schema.UpdateGroupRequest) (*model.ChatGroup, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	group, ok := s.chatGroups[id]
-	if !ok {
-		return nil, fmt.Errorf("chat group not found: %d", id)
-	}
-
-	if req.Name != nil {
-		group.Name = *req.Name
-	}
-
-	if len(req.AgentIDs) > 0 {
-		// Replace members
-		var kept []*model.ChatGroupMember
-		for _, m := range s.chatGroupMembers {
-			if m.GroupID != id {
-				kept = append(kept, m)
-			}
-		}
-		s.chatGroupMembers = kept
-
-		for _, agentID := range req.AgentIDs {
-			name := ""
-			if ag, ok := s.agents[agentID]; ok {
-				name = ag.Agent.Name
-			}
-			member := model.ChatGroupMember{
-				ID:        s.chatGroupMemberCount,
-				GroupID:   id,
-				AgentID:   agentID,
-				AgentName: name,
-			}
-			s.chatGroupMembers = append(s.chatGroupMembers, &member)
-		}
-	}
-
-	return s.GetChatGroup(ctx, id)
-}
-
-func (s *InMemoryStorage) DeleteChatGroup(ctx context.Context, id int64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.chatGroups[id]; !ok {
-		return fmt.Errorf("chat group not found: %d", id)
-	}
-
-	delete(s.chatGroups, id)
-
-	// Also delete members
-	var kept []*model.ChatGroupMember
-	for _, m := range s.chatGroupMembers {
-		if m.GroupID != id {
-			kept = append(kept, m)
-		}
-	}
-	s.chatGroupMembers = kept
-
-	return nil
-}

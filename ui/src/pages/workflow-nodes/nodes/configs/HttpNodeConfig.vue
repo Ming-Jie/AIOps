@@ -19,7 +19,12 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfHTTPURL') }}</div>
-      <q-input :model-value="strField('url')" outlined dense :placeholder="t('wfHTTPURLPh')" class="config-input" @update:model-value="patchConfig('url', $event)" />
+      <WorkflowVariableField
+        :model-value="strField('url')"
+        :rows="1"
+        :placeholder="t('wfHTTPURLPh')"
+        @update:model-value="patchConfig('url', $event)"
+      />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfHTTPHeaders') }}</div>
@@ -27,7 +32,12 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfHTTPBody') }}</div>
-      <q-input :model-value="strField('body')" outlined dense type="textarea" rows="5" :placeholder="t('wfHTTPBodyPh')" class="config-input" @update:model-value="patchConfig('body', $event)" />
+      <WorkflowVariableField
+        :model-value="strField('body')"
+        :rows="5"
+        :placeholder="t('wfHTTPBodyPh')"
+        @update:model-value="patchConfig('body', $event)"
+      />
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfHTTPTimeout') }}</div>
@@ -39,6 +49,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
 
 const props = defineProps<{
   nodeLabel: string

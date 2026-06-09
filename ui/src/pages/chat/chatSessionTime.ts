@@ -1,4 +1,4 @@
-import type { ChatGroup, ChatSession } from 'src/api/types'
+import type { ChatSession } from 'src/api/types'
 
 export function formatSessionTime (iso: string): string {
   try {
@@ -59,13 +59,18 @@ export function messageDateDividerAt (
 
 export function sessionTitle (s: ChatSession): string {
   const raw = (s.title || '').trim()
-  if (raw) return raw
+  if (raw) {
+    if (s.im_channel) return imSessionPrefix(s) + raw
+    return raw
+  }
+  if (s.im_channel && s.im_user_id) {
+    return `${imSessionPrefix(s)}${s.im_user_id}`
+  }
   const short = s.session_id.length > 10 ? `${s.session_id.slice(0, 8)}…` : s.session_id
   return short
 }
 
-export function groupCaptionTime (g: ChatGroup): string {
-  const raw =
-    g.updated_at != null && String(g.updated_at).trim() !== '' ? g.updated_at : g.created_at
-  return formatSessionTime(raw)
+function imSessionPrefix (s: ChatSession): string {
+  const ch = s.im_channel === 'lark' ? '飞书' : s.im_channel === 'telegram' ? 'TG' : s.im_channel
+  return `[${ch}] `
 }

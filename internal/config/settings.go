@@ -63,7 +63,8 @@ type Settings struct {
 	SSOAuthEnforceWhitelist bool   // if true, only existing DB users or SSO admin emails may sign in
 	SSOAdminEmails          string // comma-separated emails that receive is_admin on first SSO upsert
 
-	// UploadDir is the directory for uploaded files, relative to project root
+	// UploadDir is the root for uploaded files (chat attachments, KB originals under kb/).
+	// May be relative to the process working directory or an absolute path; use durable storage in production.
 	UploadDir string
 
 	// SandboxType is the sandbox type: docker | kubernetes | none (default: docker)
@@ -80,6 +81,12 @@ type Settings struct {
 
 	// SandboxCPUPercent is the CPU limit percent for sandbox (default: 50)
 	SandboxCPUPercent int
+
+	// OpenViking knowledge-base backend (vector store + retrieval).
+	// The whole knowledge-base feature is gated on OpenVikingEnabled + a real Postgres store.
+	OpenVikingEnabled bool   // OPENVIKING_ENABLED, default false
+	OpenVikingURL     string // OPENVIKING_URL, default http://127.0.0.1:1933
+	OpenVikingAPIKey  string // OPENVIKING_API_KEY (identifies the caller; sent as X-API-Key / Bearer)
 }
 
 func Load() *Settings {
@@ -130,6 +137,10 @@ func Load() *Settings {
 		SandboxTimeoutSeconds:  getEnvInt("SANDBOX_TIMEOUT_SECONDS", 30),
 		SandboxMemoryLimitMB:   getEnvInt("SANDBOX_MEMORY_LIMIT_MB", 256),
 		SandboxCPUPercent:      getEnvInt("SANDBOX_CPU_PERCENT", 50),
+
+		OpenVikingEnabled: getEnvBool("OPENVIKING_ENABLED", false),
+		OpenVikingURL:     getEnv("OPENVIKING_URL", "http://127.0.0.1:1933"),
+		OpenVikingAPIKey:  getEnv("OPENVIKING_API_KEY", ""),
 	}
 }
 

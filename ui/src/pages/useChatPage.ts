@@ -1,11 +1,11 @@
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter, type RouteLocationNormalizedLoaded } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { LocalStorage, useQuasar } from 'quasar'
 import ChatImagePreviewDialog from 'src/components/ChatImagePreviewDialog.vue'
 import { api } from 'boot/axios'
 import { isCancel } from 'axios'
-import type { Agent, WorkflowDefinition, APIResponse, ChatHistoryMessage, ChatReactStep, ChatSession, Skill, ChatGroup, CreateGroupRequest } from 'src/api/types'
+import type { Agent, APIResponse, ChatHistoryMessage, ChatReactStep, ChatSession, Skill } from 'src/api/types'
 import { hydrateReactStepsFromServer } from 'src/utils/reactStepsHydrate'
 import { buildSkillRiskLookup, resolveClientToolRiskLevel } from 'src/utils/toolRisk'
 import { onChatInputEnterToSend } from 'src/utils/chatComposer'
@@ -36,23 +36,16 @@ import {
   SESSION_RAIL_PREVIEW_MAX
 } from './chat/chatSessionConstants'
 import {
-  groupChatGroupsByDay,
-  groupRailBlocksFromGrouped,
-  groupSessionsByDay,
-  sessionBlocksFromGrouped
-} from './chat/chatSessionGroup'
-import {
   chatDateDividerText,
   chatMessageTimeLabel,
+  dayKeyLocal,
   formatChatMessageTime,
   formatSessionTime,
-  groupCaptionTime,
   messageDateDividerAt,
   sessionTitle
 } from './chat/chatSessionTime'
 import { formatPendingFileSize } from './chat/chatFormatBytes'
 import {
-  ROUTE_GROUP_Q,
   ROUTE_SESSION_Q,
   isLikelySessionUUID,
   normalizeRouteQuery
@@ -67,15 +60,12 @@ import {
   processReActEvent as processReActEventImpl,
   processStreamEvent as processStreamEventImpl
 } from './chat/chatReactStreamProcessors'
-import { createParseStreamEvents } from './chat/chatParseStreamEvents'
-import { createSendStreamLifecycle } from './chat/chatSendStreamRuntime'
+import { createChatSSEParser } from './chat/chatParseSSE'
+import { createSendStreamLifecycle, type ChatSendStreamLocalTurnRow } from './chat/chatSendStreamRuntime'
 import {
   computeStreamMessageLabel,
   uploadPendingChatAttachments
 } from './chat/chatSendAttachments'
-import { buildChatStreamHttpRequest, buildChatStreamUrl } from './chat/chatSendStreamRequest'
-import { createAssistantStreamSetup } from './chat/chatSendStreamAssistantSetup'
-import { applyChatRouteAfterLoadGroups as applyChatRouteFromUrl } from './chat/chatApplyChatRoute'
 import {
   handleComposerDragOver,
   handleComposerDrop,
@@ -90,8 +80,6 @@ function createChatPageState () {
   const route = useRoute()
   const router = useRouter()
 
-  const chatMode = ref<'agent' | 'workflow'>('agent')
-
   const agentsLoading = ref(false)
 
   const agents = ref<Agent[]>([])
@@ -104,106 +92,17 @@ function createChatPageState () {
     }))
   )
 
-  const workflowsLoading = ref(false)
-  const workflows = ref<WorkflowDefinition[]>([])
-  const workflowId = ref<number | null>(null)
-  const workflowOptions = computed(() =>
-    workflows.value.filter(w => w.is_active).map(w => ({
-      id: w.id,
-      label: `${w.name} (#${w.id})`
-    }))
-  )
-
-  // Chat groups（须在 canStartSession 之前声明）
-  const chatGroups = ref<ChatGroup[]>([])
-  const currentGroup = ref<ChatGroup | null>(null)
-  const groupDialogOpen = ref(false)
-  const groupForm = ref<{ name: string; agentIds: number[] }>({ name: '', agentIds: [] })
-  const groupInviteDialogOpen = ref(false)
-  const groupInviteAgentIds = ref<number[]>([])
-  const currentUserLabel = ref('')
-
-  const groupInviteSelectOptions = computed(() => {
-    const g = currentGroup.value
-    const inGroup = new Set((g?.members ?? []).map(m => m.agent_id))
-    return agents.value
-      .filter(a => !inGroup.has(a.id))
-      .map(a => ({
-        id: a.id,
-        label: a.public_id ? `${a.name}` : `${a.name} (#${a.id})`
-      }))
-  })
-
-  function openGroupInviteDialog (): void {
-    if (!currentGroup.value) return
-    groupInviteAgentIds.value = []
-    groupInviteDialogOpen.value = true
-  }
-
-  async function submitGroupInvite (): Promise<void> {
-    const g = currentGroup.value
-    if (!g) return
-    if (groupInviteAgentIds.value.length === 0) {
-      $q.notify({ type: 'warning', message: t('groupInvitePickAgents') })
-      return
-    }
-    const existing = [...(g.members ?? []).map(m => m.agent_id)]
-    const merged = [...new Set([...existing, ...groupInviteAgentIds.value])]
-    try {
-      await api.put<APIResponse<ChatGroup>>(`/chat/groups/${g.id}`, { agent_ids: merged })
-      await loadChatGroups()
-      const upd = chatGroups.value.find(x => x.id === g.id)
-      if (upd) currentGroup.value = upd
-      groupInviteDialogOpen.value = false
-      groupInviteAgentIds.value = []
-      $q.notify({ type: 'positive', message: t('groupInviteSuccess') })
-    } catch {
-      $q.notify({ type: 'negative', message: t('groupInviteFailed') })
-    }
-  }
-
-  /** 已选 Agent/Workflow 即可输入与附件；群聊仅须已选群组；不要求已有 session（首条消息由服务端创建会话） */
-  const canStartSession = computed(() => {
-    if (currentGroup.value && currentGroup.value.id > 0) {
-      return true
-    }
-    if (chatMode.value === 'agent') {
-      return agentId.value != null && agentId.value >= 1
-    }
-    return workflowId.value != null && workflowId.value >= 1
-  })
+  const canStartSession = computed(() => agentId.value != null && agentId.value >= 1)
 
   const sessionId = ref<string | null>(null)
   const sessionBusy = ref(false)
   const sessionsList = ref<ChatSession[]>([])
   const sessionsLoading = ref(false)
-  /** selectSession 过程中避免 loadSessions 把 sessionId 抢改成 list[0]（与列表刷新竞态） */
   const suppressSessionListAutoPick = ref(false)
   const sessionDrawerOpen = ref(false)
-  const SESSION_RAIL_LEGACY = 'sya_chat_session_rail_collapsed'
+  const SESSION_RAIL_LEGACY = 'aiops_chat_session_rail_collapsed'
   const SESSION_RAIL_COLLAPSE_KEY = 'aitaskmeta_chat_session_rail_collapsed'
-  /** 群聊会话 id（与 GET /chat/sessions/:id/messages 一致），刷新后从本地恢复 */
-  const LEGACY_GROUP_PREFIX = 'sya_group_session_'
-  const GROUP_SESSION_STORAGE_PREFIX = 'aitaskmeta_group_session_'
 
-  function getStoredGroupSessionId (groupId: number): string | null {
-    const k = `${GROUP_SESSION_STORAGE_PREFIX}${groupId}`
-    const cur = LocalStorage.getItem<string>(k)
-    if (cur != null && String(cur).trim() !== '') return String(cur).trim()
-    const leg = LocalStorage.getItem<string>(`${LEGACY_GROUP_PREFIX}${groupId}`)
-    if (leg != null && String(leg).trim() !== '') {
-      const s = String(leg).trim()
-      LocalStorage.set(k, s)
-      LocalStorage.removeItem(`${LEGACY_GROUP_PREFIX}${groupId}`)
-      return s
-    }
-    return null
-  }
-
-  function setStoredGroupSessionId (groupId: number, sid: string): void {
-    LocalStorage.set(`${GROUP_SESSION_STORAGE_PREFIX}${groupId}`, sid)
-    LocalStorage.removeItem(`${LEGACY_GROUP_PREFIX}${groupId}`)
-  }
   const sessionRailCollapsed = ref((() => {
     let v = LocalStorage.getItem(SESSION_RAIL_COLLAPSE_KEY)
     if (v !== '1' && v !== '0') v = LocalStorage.getItem(SESSION_RAIL_LEGACY)
@@ -214,154 +113,12 @@ function createChatPageState () {
     return v === '1'
   })())
 
-  /** 路由参数 `agentId` 复用：智能体 public_id / 数字 id，或单聊会话 UUID（群聊会话见 `routeParamSessionId`） */
   function routePathSegment (): string {
     const raw = route.params.agentId
     return typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] ?? '' : ''
   }
 
-  /** 仅 `chat-group` 路由：`/chat/group/:sessionId` */
-  function routeParamSessionId (): string {
-    const raw = route.params.sessionId
-    return typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] ?? '' : ''
-  }
-
-  /** 群聊：`/chat/group/<session_id>`（单聊仍为 `/chat/<agent|单聊 session>`） */
-  function syncGroupChatToRoute (): void {
-    const g = currentGroup.value
-    if (!g || g.id < 1) return
-    const sid = sessionId.value?.trim()
-    if (!sid) return
-    if (route.name === 'chat-group') {
-      const cur = routeParamSessionId()
-      if (cur === sid) return
-    } else {
-      const cur = routePathSegment()
-      if (cur === sid) return
-    }
-    void router.replace({ name: 'chat-group', params: { sessionId: sid }, query: {} })
-  }
-
-  async function loadChatGroups () {
-    try {
-      const { data } = await api.get<APIResponse<ChatGroup[]>>('/chat/groups')
-      chatGroups.value = data.data || []
-    } catch {
-      chatGroups.value = []
-    }
-  }
-
-  /** 路径 UUID 实为智能体 public_id：按单聊打开，不请求 GET /sessions/:id，避免无意义 404 */
-  function applyAgentFromPublicIdPath (found: Agent): void {
-    currentGroup.value = null
-    sessionListModeTab.value = 'single'
-    const prevAgent = agentId.value
-    const prevSid = sessionId.value
-    agentId.value = found.id
-    const keepSession = prevAgent === found.id && prevSid != null && prevSid !== ''
-    if (!keepSession) {
-      sessionId.value = null
-      history.value = []
-      localTurns.value = []
-      lastTurnDurationMs.value = null
-      draft.value = ''
-      pendingImages.value = []
-      pendingFiles.value = []
-      clearThoughtSteps()
-    }
-    void loadSessions()
-    syncAgentIdToRoute()
-  }
-
-  /** 根据路径 `/chat/...`、`/chat/group/...`、`?session=`（重定向）、`?group=` 恢复上下文 */
-  async function applyChatRouteAfterLoadGroups (): Promise<void> {
-    return applyChatRouteFromUrl({
-      route: route as RouteLocationNormalizedLoaded,
-      router,
-      routePathSegment,
-      routeParamSessionId,
-      loadChatGroups,
-      loadMessages,
-      loadSessions,
-      selectChatGroup,
-      applyAgentFromPublicIdPath,
-      clearThoughtSteps,
-      syncAgentIdToRoute,
-      setStoredGroupSessionId,
-      agents,
-      chatGroups,
-      currentGroup,
-      sessionId,
-      agentId,
-      workflowId,
-      chatMode,
-      sessionListModeTab,
-      history,
-      localTurns,
-      lastTurnDurationMs,
-      draft,
-      pendingImages,
-      pendingFiles,
-      sessionDrawerOpen,
-      sessionFullDialogOpen
-    })
-  }
-
-  async function createChatGroup () {
-    if (!groupForm.value.name || groupForm.value.agentIds.length === 0) {
-      $q.notify({ type: 'warning', message: t('groupNameAndAgentsRequired') })
-      return
-    }
-    try {
-      const req: CreateGroupRequest = {
-        name: groupForm.value.name,
-        agent_ids: groupForm.value.agentIds
-      }
-      const { data } = await api.post<APIResponse<ChatGroup>>('/chat/groups', req)
-      if (data.data) {
-        chatGroups.value.unshift(data.data)
-      }
-      groupDialogOpen.value = false
-      groupForm.value = { name: '', agentIds: [] }
-      $q.notify({ type: 'positive', message: t('groupCreated') })
-    } catch (err) {
-      $q.notify({ type: 'negative', message: t('groupCreateFailed') })
-    }
-  }
-
-  async function deleteChatGroup (id: number) {
-    try {
-      await api.delete(`/chat/groups/${id}`)
-      chatGroups.value = chatGroups.value.filter(g => g.id !== id)
-      if (currentGroup.value?.id === id) {
-        currentGroup.value = null
-        if (agentId.value == null && agents.value.length > 0) {
-          agentId.value = agents.value[0].id
-        }
-        if (agentId.value != null && agentId.value >= 1) {
-          syncAgentIdToRoute()
-        } else {
-          void router.replace({ path: '/chat', query: {} })
-        }
-      }
-      $q.notify({ type: 'positive', message: t('groupDeleted') })
-    } catch {
-      $q.notify({ type: 'negative', message: t('groupDeleteFailed') })
-    }
-  }
-
-  function clearCurrentGroup () {
-    currentGroup.value = null
-    sessionListModeTab.value = 'single'
-    if (chatMode.value === 'agent' && agentId.value != null && agentId.value >= 1) {
-      syncAgentIdToRoute()
-    } else {
-      void router.replace({ path: '/chat', query: {} })
-    }
-  }
-
   const history = ref<ChatHistoryMessage[]>([])
-  /** 与 ChatHistoryMessage 附件字段一致：image_urls / file_urls / image_data_urls（仅本地预览） */
   const localTurns = ref<
     {
       role: string
@@ -372,9 +129,7 @@ function createChatPageState () {
       image_data_urls?: string[]
       file_urls?: string[]
       createdAt?: string
-      /** ReAct / ADK 步骤快照，供 ThoughtSidebar；主气泡只渲染最终正文 */
       reactSteps?: ChatReactStep[]
-      /** Agent ID for group chat responses (to display which agent sent the message) */
       agentId?: number
     }[]
   >([])
@@ -405,16 +160,9 @@ function createChatPageState () {
 
   const sending = ref(false)
   const stopping = ref(false)
-  /** 用于中止 /chat/stream 的 fetch（非响应式，仅 sendStream/stopStream 使用） */
   let streamAbortController: AbortController | null = null
   const draft = ref('')
-  /** Quasar QInput 实例，用于定位 textarea 做 @ 成员提示 */
   const composerInputRef = ref<{ $el?: HTMLElement } | null>(null)
-  /** 群聊输入框 @ 提及菜单 */
-  const mentionOpen = ref(false)
-  const mentionQuery = ref('')
-  const mentionAnchorStart = ref(0)
-  const mentionIndex = ref(0)
   const chatScrollRef = ref<HTMLElement | null>(null)
 
   watch(
@@ -434,7 +182,6 @@ function createChatPageState () {
 
   const currentStreamModelName = ref('')
 
-  /** 与 GET /skills（库表 + 服务端 enrich）一致，用于侧栏风险；未加载前回退 medium */
   const skillRiskLookup = ref<Record<string, string>>({})
 
   async function loadSkillRiskLookup (): Promise<void> {
@@ -452,7 +199,7 @@ function createChatPageState () {
     return resolveClientToolRiskLevel(toolName, payloadRisk, skillRiskLookup.value)
   }
 
-  const THOUGHT_SIDEBAR_LEGACY = 'sya_chat_thought_sidebar_open'
+  const THOUGHT_SIDEBAR_LEGACY = 'aiops_chat_thought_sidebar_open'
   const THOUGHT_SIDEBAR_KEY = 'aitaskmeta_chat_thought_sidebar_open'
   const thoughtSidebarOpen = ref((() => {
     let v = LocalStorage.getItem(THOUGHT_SIDEBAR_KEY)
@@ -464,7 +211,6 @@ function createChatPageState () {
     return v === '1'
   })())
   const thoughtSteps = ref<{ type: string; data: Record<string, unknown>; meta?: Record<string, unknown>; timestamp?: string }[]>([])
-  /** 与 chatParseStreamEvents 共用：去掉主气泡内与 ADK tool_result 完全重复的文本 */
   const lastServerToolResultText = { value: '' }
   const thoughtStatus = ref<'running' | 'completed'>('completed')
   const lastTurnDurationMs = ref<number | null>(null)
@@ -486,14 +232,11 @@ function createChatPageState () {
     }
   }
 
-  /** Plan-and-execute：与桌面端 PlanExecuteTaskPanel 一致，合并 plan_tasks / plan_step 为一条可更新清单 */
   function upsertPlanExecute (payload: Record<string, unknown>): void {
     const reactType = payload.type as string
     if (reactType === 'plan_tasks') {
       const tasks = initTasksFromPlanTasksPayload(payload)
       if (tasks.length === 0) return
-      // 新一轮 plan_tasks（含 tool_result/stream 重发）时先清掉旧清单，避免多条 plan_execute 并存；
-      // 否则 reactSteps.find 取第一条、getCurrentPlanTasks 取最后一条，主气泡会叠两张卡或状态错位。
       thoughtSteps.value = thoughtSteps.value.filter(
         (s) => !(s.type === 'plan' && s.data?.kind === 'plan_execute')
       )
@@ -545,26 +288,12 @@ function createChatPageState () {
     return false
   }
 
-  function appendThoughtText (content: string, source = 'stream'): void {
-    if (!content || !content.trim()) return
-    const lastStep = thoughtSteps.value[thoughtSteps.value.length - 1]
-    if (lastStep && lastStep.type === 'thought' && lastStep.data?.source === source) {
-      lastStep.data.content = `${lastStep.data.content || ''}${content}`
-      return
-    }
-    pushThoughtStep({
-      type: 'thought',
-      data: { content, source }
-    })
-  }
-
   function clearThoughtSteps (): void {
     thoughtSteps.value = []
     lastServerToolResultText.value = ''
     thoughtStatus.value = 'completed'
   }
 
-  /** 用户手动停止流式回复时，结束当前计划项的转圈状态，避免 UI 一直显示为 running。 */
   function finalizeRunningPlanTasksOnStop (): void {
     const list = thoughtSteps.value
     for (let i = list.length - 1; i >= 0; i--) {
@@ -585,52 +314,6 @@ function createChatPageState () {
     }
   }
 
-  async function selectChatGroup (group: ChatGroup) {
-    currentGroup.value = group
-    agentId.value = null
-    workflowId.value = null
-    chatMode.value = 'agent'
-    const stored = getStoredGroupSessionId(group.id)
-    let sid = stored
-    if (!sid) {
-      const first = group.members?.[0]?.agent_id
-      if (first != null && first >= 1) {
-        try {
-          const { data } = await api.post<APIResponse<ChatSession>>('/chat/sessions', {
-            agent_id: first,
-            group_id: group.id
-          })
-          const sess = data.data as ChatSession
-          if (sess?.session_id) {
-            sid = sess.session_id
-            setStoredGroupSessionId(group.id, sid)
-          }
-        } catch {
-          sid = ''
-        }
-      }
-    }
-    sessionId.value = sid
-    if (sessionId.value) {
-      setStoredGroupSessionId(group.id, sessionId.value)
-    }
-    history.value = []
-    localTurns.value = []
-    lastTurnDurationMs.value = null
-    draft.value = ''
-    pendingImages.value = []
-    pendingFiles.value = []
-    clearThoughtSteps()
-    sessionDrawerOpen.value = false
-    sessionFullDialogOpen.value = false
-    if (sessionId.value) {
-      void loadMessages()
-    }
-    sessionListModeTab.value = 'group'
-    syncGroupChatToRoute()
-  }
-
-  /** 打开会话或刷新消息后，用最后一条含 react_steps 的助手消息驱动 ThoughtSidebar（与流式过程共用同一数据源） */
   function syncThoughtSidebarFromLoadedHistory (): void {
     if (sending.value) return
     const msgs = displayMessages.value
@@ -687,9 +370,8 @@ function createChatPageState () {
     pendingImages.value.splice(idx, 1)
   }
 
-  /** 与「上传文件」按钮、粘贴、拖放共用；内部校验类型与大小 */
   function enqueuePendingDocumentFromFile (file: File): void {
-    const maxFileSize = 10 * 1024 * 1024 // 10MB，与后端上传一致
+    const maxFileSize = 10 * 1024 * 1024
     if (!isAllowedDocumentButtonFile(file)) {
       $q.notify({ type: 'warning', message: t('chatDocumentTypeNotAllowed') })
       return
@@ -728,11 +410,10 @@ function createChatPageState () {
 
   function onFileSelected (e: Event): void {
     const input = e.target as HTMLInputElement
-    // 必须先拷贝 File[]：input.value='' 会清空同一 FileList，随后 files.length 变为 0
     const fileArray = input.files?.length ? Array.from(input.files) : []
     input.value = ''
     logChatAttach(
-      `onFileSelected files=${fileArray.length} canStart=${canStartSession.value} mode=${chatMode.value} agentId=${agentId.value} workflowId=${workflowId.value} inputDisabled=${input.disabled}`
+      `onFileSelected files=${fileArray.length} canStart=${canStartSession.value} agentId=${agentId.value} inputDisabled=${input.disabled}`
     )
     if (fileArray.length === 0) return
     for (const file of fileArray) {
@@ -818,7 +499,7 @@ function createChatPageState () {
     const picked = input.files?.length ? Array.from(input.files) : []
     input.value = ''
     logChatAttach(
-      `onImageSelected files=${picked.length} canStart=${canStartSession.value} mode=${chatMode.value} agentId=${agentId.value} workflowId=${workflowId.value} inputDisabled=${input.disabled}`
+      `onImageSelected files=${picked.length} canStart=${canStartSession.value} agentId=${agentId.value} inputDisabled=${input.disabled}`
     )
     if (picked.length === 0) return
     for (let i = 0; i < picked.length; i++) {
@@ -842,7 +523,6 @@ function createChatPageState () {
     enqueuePendingDocumentFromFile
   })
 
-  /** 输入框内粘贴：图片走待发送预览；PDF/TXT/MD/JSON 走「上传文件」同款逻辑（实现见 chatComposerAttach）。 */
   function onComposerPaste (e: ClipboardEvent): void {
     handleComposerPaste(e, composerAttachDeps())
   }
@@ -851,18 +531,11 @@ function createChatPageState () {
     handleComposerDragOver(e, composerAttachDeps())
   }
 
-  /** 拖入输入区：与文件夹按钮、粘贴一致，支持图片与允许类型的文档 */
   function onComposerDrop (e: DragEvent): void {
     handleComposerDrop(e, composerAttachDeps())
   }
 
-  /** 将地址栏与当前选中智能体对齐，避免下拉切换后刷新仍回到旧 ID */
   function syncAgentIdToRoute (): void {
-    if (chatMode.value !== 'agent') return
-    if (currentGroup.value && currentGroup.value.id > 0) {
-      syncGroupChatToRoute()
-      return
-    }
     const id = agentId.value
     const curRaw = route.params.agentId
     const cur = typeof curRaw === 'string' ? curRaw : Array.isArray(curRaw) ? (curRaw[0] ?? '') : ''
@@ -870,14 +543,49 @@ function createChatPageState () {
       const ag = agents.value.find(a => a.id === id)
       const pub = (ag?.public_id ?? '').trim()
       const want = pub !== '' ? pub : String(id)
-      if (
-        cur === want &&
-        !normalizeRouteQuery(route.query[ROUTE_GROUP_Q] as string | string[] | undefined) &&
-        !normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined)
-      ) {
+      const sid = (sessionId.value ?? '').trim()
+      const query = sid !== '' ? { [ROUTE_SESSION_Q]: sid } : {}
+      const curSid = normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined)
+      if (cur === want && curSid === sid) {
         return
       }
-      void router.replace({ name: 'chat', params: { agentId: want }, query: {} })
+      void router.replace({ name: 'chat', params: { agentId: want }, query })
+    }
+  }
+
+  async function resolveSessionFromAPI (sid: string): Promise<ChatSession | null> {
+    try {
+      const { data } = await api.get<APIResponse<ChatSession>>(
+        `/chat/sessions/${encodeURIComponent(sid)}`
+      )
+      return (data.data as ChatSession) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  async function openSessionById (sid: string): Promise<boolean> {
+    const sess = await resolveSessionFromAPI(sid)
+    if (!sess?.session_id) return false
+    suppressSessionListAutoPick.value = true
+    try {
+      sessionId.value = sess.session_id
+      localTurns.value = []
+      lastTurnDurationMs.value = null
+      if (sess.agent_id >= 1) {
+        agentId.value = sess.agent_id
+        const ag = agents.value.find(a => a.id === sess.agent_id)
+        const pub = (ag?.public_id ?? '').trim() || String(sess.agent_id)
+        void router.replace({
+          name: 'chat',
+          params: { agentId: pub },
+          query: { [ROUTE_SESSION_Q]: sess.session_id }
+        })
+      }
+      await loadMessages()
+      return true
+    } finally {
+      suppressSessionListAutoPick.value = false
     }
   }
 
@@ -888,16 +596,18 @@ function createChatPageState () {
       agents.value = (data.data ?? []) as Agent[]
       const pathStr = routePathSegment()
       const looksLikeSessionUuidPath = pathStr !== '' && isLikelySessionUUID(pathStr)
-      const hasSessionInQuery =
-        normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined) !== ''
-      const hasGroupInQuery =
-        normalizeRouteQuery(route.query[ROUTE_GROUP_Q] as string | string[] | undefined) !== ''
+      const querySid = normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined)
+      const hasSessionInQuery = querySid !== ''
       const fromStoragePub = LocalStorage.getItem<string>(LAST_AGENT_PUBLIC_ID_KEY)
       const legacyNum = LocalStorage.getItem<string>('lastAgentId')
-      if (route.name === 'chat-group') {
-        agentId.value = null
-      } else if (hasSessionInQuery || hasGroupInQuery) {
-        agentId.value = null
+      if (hasSessionInQuery) {
+        const sess = await resolveSessionFromAPI(querySid)
+        const aid = sess?.agent_id
+        if (sess && aid != null && aid >= 1) {
+          agentId.value = aid
+          sessionId.value = querySid
+          await loadMessages()
+        }
       } else {
         const raw =
           pathStr !== '' ? pathStr : (fromStoragePub ?? '')
@@ -914,8 +624,20 @@ function createChatPageState () {
             }
           }
         } else if (looksLikeSessionUuidPath) {
-          // 可能是会话 id（群/单聊），也可能是与 session 同形的 public_id；后者由 applyChatRoute 在 GET 失败后回退解析
-          agentId.value = null
+          if (await openSessionById(pathStr)) {
+            return
+          }
+          const stored = fromStoragePub
+            ? findAgentFromRouteParam(fromStoragePub, agents.value)
+            : undefined
+          agentId.value = stored?.id ?? (agents.value.length > 0 ? agents.value[0].id : null)
+          if (agentId.value != null && agentId.value >= 1) {
+            const ag = agents.value.find(a => a.id === agentId.value)
+            const pub = (ag?.public_id ?? '').trim()
+            void router.replace({ name: 'chat', params: { agentId: pub || String(agentId.value) }, query: {} })
+          } else {
+            void router.replace({ name: 'chat', params: {}, query: {} })
+          }
         } else if (agents.value.length > 0) {
           agentId.value = agents.value[0].id
         } else {
@@ -927,27 +649,8 @@ function createChatPageState () {
     }
   }
 
-  async function loadWorkflows () {
-    workflowsLoading.value = true
-    try {
-      const { data } = await api.get<APIResponse<WorkflowDefinition[]>>('/workflows/graph')
-      workflows.value = (data.data ?? []) as WorkflowDefinition[]
-    } finally {
-      workflowsLoading.value = false
-    }
-  }
-
   const canSend = computed(() => {
     if (sending.value) return false
-    // Group chat or agent/workflow chat requires different conditions
-    if (currentGroup.value && currentGroup.value.id > 0) {
-      // Group chat: need group and either text or @mentions
-      const hasText = draft.value.trim().length > 0
-      const hasMentions = /@\S+/.test(draft.value)
-      const hasImg = pendingImages.value.length > 0
-      const hasFiles = pendingFiles.value.length > 0
-      return hasText || hasMentions || hasImg || hasFiles
-    }
     if (!canStartSession.value) return false
     const hasText = draft.value.trim().length > 0
     const hasImg = pendingImages.value.length > 0
@@ -955,124 +658,31 @@ function createChatPageState () {
     return hasText || hasImg || hasFiles
   })
 
-  /** 当前群成员（可 @），名称与 extractMentions 所用 agents 列表一致 */
-  const groupMentionAgents = computed(() => {
-    const g = currentGroup.value
-    if (!g?.members?.length) return [] as { id: number; name: string }[]
-    const out: { id: number; name: string }[] = []
-    const seen = new Set<number>()
-    for (const m of g.members) {
-      const ag = agents.value.find(a => a.id === m.agent_id)
-      const name = (m.agent_name ?? ag?.name ?? '').trim()
-      if (!name || seen.has(m.agent_id)) continue
-      seen.add(m.agent_id)
-      out.push({ id: m.agent_id, name })
+  const showSessionRail = computed(() => $q.screen.gt.sm)
+
+  function groupSessionsByDay (sessions: ChatSession[]): Map<string, ChatSession[]> {
+    const map = new Map<string, ChatSession[]>()
+    for (const s of sessions) {
+      const key = dayKeyLocal(s.updated_at)
+      if (!key) continue
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(s)
     }
-    return out
-  })
-
-  const mentionFiltered = computed(() => {
-    if (!mentionOpen.value || !currentGroup.value) return [] as { id: number; name: string }[]
-    const q = mentionQuery.value.toLowerCase()
-    return groupMentionAgents.value.filter(
-      a => q === '' || a.name.toLowerCase().includes(q)
-    )
-  })
-
-  const showSessionRail = computed(() => chatMode.value === 'agent' && $q.screen.gt.sm)
-
-  function getComposerTextarea (): HTMLTextAreaElement | null {
-    const q = composerInputRef.value as
-      | { nativeEl?: HTMLTextAreaElement | null; $el?: HTMLElement }
-      | null
-    if (!q) return null
-    const native = q.nativeEl
-    if (native instanceof HTMLTextAreaElement) return native
-    const root = q.$el
-    if (!root) return null
-    return root.querySelector('textarea')
+    return map
   }
 
-  /** 半角 @ 与全角 ＠（IME）均触发提及 */
-  const MENTION_AT_FULL = '\uFF20'
-
-  function updateMentionFromDraft (): void {
-    const g = currentGroup.value
-    if (!g?.id || !(g.members?.length ?? 0)) {
-      mentionOpen.value = false
-      return
+  function sessionBlocksFromGrouped (grouped: Map<string, ChatSession[]>, t: (key: string) => string): { key: string; label: string; items: ChatSession[] }[] {
+    const todayKey = dayKeyLocal(new Date().toISOString())
+    const yesterdayDate = new Date()
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+    const yesterdayKey = dayKeyLocal(yesterdayDate.toISOString())
+    const out: { key: string; label: string; items: ChatSession[] }[] = []
+    for (const [key, items] of grouped) {
+      const label = key === todayKey ? t('chatSessionGroupToday') : key === yesterdayKey ? t('chatSessionGroupYesterday') : t('chatSessionGroupEarlier')
+      out.push({ key, label, items })
     }
-    const ta = getComposerTextarea()
-    if (!ta) return
-    const cursor = ta.selectionStart ?? draft.value.length
-    const before = draft.value.slice(0, cursor)
-    const iAt = before.lastIndexOf('@')
-    const iFull = before.lastIndexOf(MENTION_AT_FULL)
-    const at = Math.max(iAt, iFull)
-    if (at < 0) {
-      mentionOpen.value = false
-      return
-    }
-    if (at > 0 && !/[\s\n]/.test(before[at - 1] ?? '')) {
-      mentionOpen.value = false
-      return
-    }
-    const afterAt = before.slice(at + 1)
-    if (/\s/.test(afterAt)) {
-      mentionOpen.value = false
-      return
-    }
-    mentionAnchorStart.value = at
-    mentionQuery.value = afterAt
-    mentionOpen.value = true
-    mentionIndex.value = 0
+    return out.sort((a, b) => b.key.localeCompare(a.key))
   }
-
-  function insertMentionByAgent (agent: { id: number; name: string }): void {
-    const ta = getComposerTextarea()
-    const end = ta?.selectionStart ?? draft.value.length
-    const start = mentionAnchorStart.value
-    const name = agent.name
-    const before = draft.value.slice(0, start)
-    const after = draft.value.slice(end)
-    draft.value = `${before}@${name} ${after}`
-    mentionOpen.value = false
-    void nextTick(() => {
-      const pos = start + name.length + 2
-      const t = getComposerTextarea()
-      t?.setSelectionRange(pos, pos)
-      t?.focus()
-    })
-  }
-
-  function onComposerKeyup (): void {
-    if (currentGroup.value?.id) {
-      void nextTick(() => updateMentionFromDraft())
-    }
-  }
-
-  watch(
-    () => draft.value,
-    () => {
-      if (currentGroup.value?.id) {
-        void nextTick(() => updateMentionFromDraft())
-      }
-    }
-  )
-
-  watch(currentGroup, () => {
-    mentionOpen.value = false
-  })
-
-  watch(mentionFiltered, (list) => {
-    if (mentionIndex.value >= list.length) {
-      mentionIndex.value = Math.max(0, list.length - 1)
-    }
-  })
-
-  const groupChatRailBlocks = computed(() =>
-    groupRailBlocksFromGrouped(groupChatGroupsByDay(chatGroups.value), t)
-  )
 
   const sessionGroupBlocks = computed(() =>
     sessionBlocksFromGrouped(groupSessionsByDay(sessionsList.value), t)
@@ -1118,22 +728,7 @@ function createChatPageState () {
 
   const sessionFullDialogOpen = ref(false)
 
-  /** 历史会话侧栏/抽屉底部：单聊 | 群聊，默认单聊 */
-  const sessionListModeTab = ref<'single' | 'group'>('single')
-
-  watch(sessionListModeTab, (mode) => {
-    // 从群聊切到单聊侧栏时须退出群聊上下文，否则 agentId 为空，侧栏拉不到会话列表（刷新后无缓存列表时表现为「看不到历史」）
-    if (mode === 'single' && currentGroup.value) {
-      clearCurrentGroup()
-      return
-    }
-    if (mode === 'group' && chatGroups.value.length === 0) {
-      void loadChatGroups()
-    }
-    if (mode === 'single' && chatMode.value === 'agent' && agentId.value != null && agentId.value >= 1) {
-      void loadSessions()
-    }
-  })
+  const sessionListModeTab = ref<'single'>('single')
 
   function toggleSessionRailCollapse (): void {
     sessionRailCollapsed.value = !sessionRailCollapsed.value
@@ -1167,7 +762,6 @@ function createChatPageState () {
     return fetchSessionsPage(0, SESSION_LIST_FETCH_LIMIT)
   }
 
-  /** 拉取某会话的全部历史（多页 offset），与单聊/群聊一致 */
   async function fetchAllSessionMessages (sid: string): Promise<ChatHistoryMessage[]> {
     const all: ChatHistoryMessage[] = []
     let offset = 0
@@ -1269,10 +863,6 @@ function createChatPageState () {
   })
 
   async function loadSessions () {
-    // 群聊没有 agentId；若按「无 agent」清空 sessionId/history，会在刷新 /chat/group/:id 后抹掉刚加载的消息
-    if (currentGroup.value != null && currentGroup.value.id > 0) {
-      return
-    }
     if (agentId.value == null || agentId.value < 1) {
       sessionsList.value = []
       sessionId.value = null
@@ -1286,7 +876,6 @@ function createChatPageState () {
       sessionsList.value = list
       if (list.length === 0) {
         history.value = []
-        // 首次对话时列表仍可能为空：流式进行中、或 refresh 尚未返回。若此时清空 localTurns / sessionId，会抹掉界面上的首条消息与 X-Session-ID，表现为「发完没反应」。
         if (!sending.value && localTurns.value.length === 0) {
           sessionId.value = null
           localTurns.value = []
@@ -1317,7 +906,7 @@ function createChatPageState () {
   }
 
   async function refreshSessionsList () {
-    if (chatMode.value !== 'agent' || agentId.value == null || agentId.value < 1) return
+    if (agentId.value == null || agentId.value < 1) return
     try {
       sessionsList.value = await fetchSessionsList()
     } catch {
@@ -1331,9 +920,7 @@ function createChatPageState () {
       sessionFullDialogOpen.value = false
       return
     }
-    currentGroup.value = null
     sessionListModeTab.value = 'single'
-    // 群聊时 agentId 为空，侧栏 sessionsList 未拉取；必须从接口取 session 才能设置 agentId，否则 URL 仍停在 /chat/<群会话uuid>，syncAgentIdToRoute 不生效
     let sess = sessionsList.value.find(s => s.session_id === sid)
     if (!sess) {
       try {
@@ -1352,7 +939,6 @@ function createChatPageState () {
     }
     suppressSessionListAutoPick.value = true
     try {
-      // 先写 sessionId，再写 agentId，避免 watch(agentId)→loadSessions 在旧 sessionId 上抢改 list[0]
       sessionId.value = sid
       localTurns.value = []
       lastTurnDurationMs.value = null
@@ -1368,200 +954,122 @@ function createChatPageState () {
     syncAgentIdToRoute()
   }
 
-  async function loadMessages () {
-    if (!sessionId.value) return
+  async function loadMessages (): Promise<boolean> {
+    if (!sessionId.value) return false
     try {
       history.value = await fetchAllSessionMessages(sessionId.value)
+      await nextTick()
+      syncThoughtSidebarFromLoadedHistory()
+      return true
     } catch (e: unknown) {
-      // axios 拦截器对同 URL 重复请求会取消上一次；勿清空 history、勿当错误打日志
-      if (isCancel(e)) return
+      if (isCancel(e)) return false
       history.value = []
       const err = e as { response?: { status?: number } }
+      if (err.response?.status === 403) {
+        $q.notify({ type: 'warning', message: '无权查看该会话，请确认已重启后端并刷新页面' })
+      }
       if (err.response?.status === 404) {
         $q.notify({ type: 'warning', message: t('chatSessionNotFound') })
       }
       if (err.response?.status === 503) {
         $q.notify({ type: 'warning', message: '无法加载聊天记录' })
       }
+      return false
     }
-    await nextTick()
-    syncThoughtSidebarFromLoadedHistory()
   }
 
   async function createSession () {
-    if (chatMode.value === 'agent') {
-      if (agentId.value == null || agentId.value < 1) return
-      sessionBusy.value = true
-      try {
-        const { data } = await api.post<APIResponse<ChatSession>>('/chat/sessions', { agent_id: agentId.value })
-        const sess = data.data as ChatSession
-        sessionId.value = sess.session_id
-        localTurns.value = []
-        history.value = []
-        lastTurnDurationMs.value = null
-        clearThoughtSteps()
-        await refreshSessionsList()
-        $q.notify({ type: 'positive', message: '已创建会话' })
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { message?: string }; status?: number } }
-        if (err.response?.status === 503) {
-          $q.notify({ type: 'warning', message: '暂无法创建会话' })
-        } else {
-          $q.notify({ type: 'negative', message: err.response?.data?.message ?? '创建会话失败' })
-        }
-      } finally {
-        sessionBusy.value = false
+    if (agentId.value == null || agentId.value < 1) return
+    sessionBusy.value = true
+    try {
+      const { data } = await api.post<APIResponse<ChatSession>>('/chat/sessions', { agent_id: agentId.value })
+      const sess = data.data as ChatSession
+      sessionId.value = sess.session_id
+      localTurns.value = []
+      history.value = []
+      lastTurnDurationMs.value = null
+      clearThoughtSteps()
+      await refreshSessionsList()
+      $q.notify({ type: 'positive', message: '已创建会话' })
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string }; status?: number } }
+      if (err.response?.status === 503) {
+        $q.notify({ type: 'warning', message: '暂无法创建会话' })
+      } else {
+        $q.notify({ type: 'negative', message: err.response?.data?.message ?? '创建会话失败' })
       }
-    } else {
-      if (workflowId.value == null || workflowId.value < 1) return
-      sessionBusy.value = true
-      try {
-        const { data } = await api.post<APIResponse<ChatSession>>('/chat/sessions', { workflow_id: workflowId.value })
-        const sess = data.data as ChatSession
-        sessionId.value = sess.session_id
-        localTurns.value = []
-        history.value = []
-        lastTurnDurationMs.value = null
-        clearThoughtSteps()
-        $q.notify({ type: 'positive', message: '已创建工作流会话' })
-      } catch (e: unknown) {
-        const err = e as { response?: { data?: { message?: string }; status?: number } }
-        $q.notify({ type: 'negative', message: err.response?.data?.message ?? '创建工作流会话失败' })
-      } finally {
-        sessionBusy.value = false
-      }
+    } finally {
+      sessionBusy.value = false
     }
   }
 
   async function createSessionFromSidebar () {
-    if (chatMode.value === 'agent') {
-      currentGroup.value = null
-    }
     await createSession()
-    if (chatMode.value === 'agent') {
-      syncAgentIdToRoute()
-    }
+    syncAgentIdToRoute()
   }
 
   function onSessionRailAddClick () {
-    if (sessionListModeTab.value === 'group') {
-      groupDialogOpen.value = true
-    } else {
-      void createSessionFromSidebar()
-    }
+    void createSessionFromSidebar()
   }
 
   async function sendStream (text: string, fileUrls?: string[], imageUrlsForHistory?: string[]) {
     const baseURL = (api.defaults.baseURL ?? '/api/v1').replace(/\/$/, '')
-    const isGroupChat = !!(currentGroup.value && currentGroup.value.id > 0)
-    const url = buildChatStreamUrl(baseURL, isGroupChat)
+    const url = `${baseURL}/chat/stream`
     const token = LocalStorage.getItem('access') as string | null
 
-    const {
-      assistantIdx,
-      assistantEntries,
-      groupAssistantBlockStartIdx,
-      pendingAgentIds,
-      ensureAssistantRow
-    } = createAssistantStreamSetup(isGroupChat, text, agents.value, localTurns)
+    const assistantIdx = localTurns.value.length
+    localTurns.value.push({
+      role: 'assistant',
+      content: '',
+      displayedContent: '',
+      createdAt: new Date().toISOString()
+    })
+    const assistantEntries = new Map<number, number>([[0, assistantIdx]])
+    const pendingAgentIds: number[] = []
 
-    const groupNoAgentReply = isGroupChat && pendingAgentIds.length === 0
-    thoughtStatus.value = groupNoAgentReply ? 'completed' : 'running'
+    thoughtStatus.value = 'running'
     lastTurnDurationMs.value = null
-    if (!groupNoAgentReply) {
-      clearThoughtSteps()
-    }
+    clearThoughtSteps()
 
-    const parseStreamEvents = createParseStreamEvents({
-      isGroupChat,
-      groupAssistantBlockStartIdx,
-      pendingAgentIds,
-      agents,
-      localTurns,
-      assistantEntries,
-      processStreamEvent,
-      processReActEvent,
-      thoughtSteps,
-      currentStreamModelName,
-      appendThoughtText,
-      scrollChatToBottom,
-      ensureAssistantRow,
-      lastServerToolResultText
+    const sseParser = createChatSSEParser({
+      onReactEvent: (data) => { processReActEvent(data) },
+      onStreamEvent: (data) => { processStreamEvent(data) }
     })
 
     const { runStreamFetch } = createSendStreamLifecycle({
-      isGroupChat,
+      isGroupChat: false,
       assistantIdx,
       pendingAgentIds,
       assistantEntries,
-      localTurns,
+      localTurns: localTurns as Ref<ChatSendStreamLocalTurnRow[]>,
       thoughtStatus,
       thoughtSteps,
       sessionId,
-      currentGroup,
+      currentGroup: ref(null) as Ref<null>,
       lastTurnDurationMs,
-      parseStreamEvents,
+      parseStreamChunk: (chunk) => sseParser.feed(chunk),
+      parseStreamFinish: () => sseParser.finish(),
       scrollChatToBottom,
       t,
-      setStoredGroupSessionId,
+      setStoredGroupSessionId: (_groupId: number, _sid: string) => {},
       setStreamAbortController: (ac) => { streamAbortController = ac }
     })
 
-    const { body, headers } = buildChatStreamHttpRequest({
-      text,
-      sessionId: sessionId.value,
-      isGroupChat,
-      currentGroup: currentGroup.value,
-      agentId: agentId.value,
-      imageUrlsForHistory,
-      fileUrls,
-      agents: agents.value,
-      token
-    })
+    const headers: Record<string, string> = {}
+    if (token) headers.Authorization = `Bearer ${token}`
+    const body = {
+      message: text,
+      session_id: sessionId.value,
+      agent_id: agentId.value,
+      image_urls: imageUrlsForHistory,
+      file_urls: fileUrls
+    }
 
     const ac = new AbortController()
     await runStreamFetch({ url, headers, body, ac })
-    // 流结束：不在此处 stopTypewriter / 同步全文，否则正常流结束时会在同一轮取消 rAF，打字机失效（见 applyParsed isFinal）。
   }
 
-  /** Enter 发送；Shift+Enter 换行；IME 组字时 Enter 不发送（与桌面端一致）。群聊时 @ 成员菜单优先。 */
   function onComposerKeydown (e: KeyboardEvent) {
-    if (currentGroup.value?.id && mentionOpen.value) {
-      const list = mentionFiltered.value
-      if (e.key === 'ArrowDown') {
-        if (list.length > 0) {
-          e.preventDefault()
-          mentionIndex.value = (mentionIndex.value + 1) % list.length
-        }
-        return
-      }
-      if (e.key === 'ArrowUp') {
-        if (list.length > 0) {
-          e.preventDefault()
-          mentionIndex.value = (mentionIndex.value - 1 + list.length) % list.length
-        }
-        return
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        mentionOpen.value = false
-        return
-      }
-      if (e.key === 'Tab' && list.length > 0) {
-        e.preventDefault()
-        insertMentionByAgent(list[mentionIndex.value])
-        return
-      }
-      if (e.key === 'Enter' && !e.shiftKey) {
-        if (e.isComposing) return
-        if (list.length > 0) {
-          e.preventDefault()
-          insertMentionByAgent(list[mentionIndex.value])
-          return
-        }
-        mentionOpen.value = false
-      }
-    }
     onChatInputEnterToSend(e, send)
   }
 
@@ -1660,18 +1168,12 @@ function createChatPageState () {
   watch(
     () => route.params.agentId,
     () => {
-      if (route.name === 'chat-group') return
-      if (normalizeRouteQuery(route.query[ROUTE_GROUP_Q] as string | string[] | undefined)) return
       if (normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined)) return
       const rawStr = routePathSegment()
-      if (chatMode.value !== 'agent' || agents.value.length === 0) return
-      // UUID 形路径可能是会话 id（由 applyChatRoute GET 解析），也可能是智能体 public_id
+      if (agents.value.length === 0) return
       if (rawStr !== '' && isLikelySessionUUID(rawStr)) {
         const found = findAgentFromRouteParam(rawStr, agents.value)
         if (!found) return
-        if (currentGroup.value) {
-          currentGroup.value = null
-        }
         if (agentId.value !== found.id) {
           agentId.value = found.id
         }
@@ -1679,9 +1181,6 @@ function createChatPageState () {
       }
       const found = findAgentFromRouteParam(rawStr, agents.value)
       if (!found) return
-      if (currentGroup.value) {
-        currentGroup.value = null
-      }
       if (agentId.value !== found.id) {
         agentId.value = found.id
       }
@@ -1693,38 +1192,35 @@ function createChatPageState () {
 
   watch(
     () =>
-      `${String(route.name)}\x00${route.name === 'chat-group' ? routeParamSessionId() : ''}\x00${routePathSegment()}\x00${normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined)}\x00${normalizeRouteQuery(route.query[ROUTE_GROUP_Q] as string | string[] | undefined)}`,
+      `${route.name === 'chat' ? 'chat' : ''}\x00${routePathSegment()}\x00${normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined)}`,
     async () => {
-      if (route.name !== 'chat' && route.name !== 'chat-group') return
-      if (chatGroups.value.length === 0) await loadChatGroups()
-      await applyChatRouteAfterLoadGroups()
+      if (route.name !== 'chat') return
+      const querySid = normalizeRouteQuery(route.query[ROUTE_SESSION_Q] as string | string[] | undefined)
+      if (querySid !== '') {
+        if (sessionId.value !== querySid) {
+          const sess = await resolveSessionFromAPI(querySid)
+          const aid = sess?.agent_id
+          if (sess && aid != null && aid >= 1) agentId.value = aid
+          sessionId.value = querySid
+          localTurns.value = []
+          await loadMessages()
+        }
+        return
+      }
+      const rawStr = routePathSegment()
+      if (rawStr !== '' && isLikelySessionUUID(rawStr)) {
+        if (findAgentFromRouteParam(rawStr, agents.value)) return
+        if (sessionId.value !== rawStr) {
+          await openSessionById(rawStr)
+        }
+      }
     }
   )
-
-  watch(sessionId, () => {
-    if (!currentGroup.value?.id) return
-    syncGroupChatToRoute()
-  })
-
-  watch(workflowId, () => {
-    localTurns.value = []
-    lastTurnDurationMs.value = null
-  })
-
-  watch(chatMode, m => {
-    if (m === 'workflow') {
-      sessionsList.value = []
-      sessionDrawerOpen.value = false
-    } else {
-      syncAgentIdToRoute()
-      void loadSessions()
-    }
-  })
 
   function onDocumentVisibility () {
     if (document.visibilityState !== 'visible') return
     void loadSkillRiskLookup()
-    if (chatMode.value !== 'agent' || agentId.value == null || agentId.value < 1) return
+    if (agentId.value == null || agentId.value < 1) return
     void refreshSessionsList()
   }
 
@@ -1737,15 +1233,6 @@ function createChatPageState () {
 
   onMounted(async () => {
     await loadAgents()
-    try {
-      const { data } = await api.get<{ user: { username: string } }>('/auth/me')
-      currentUserLabel.value = (data.user?.username ?? '').trim()
-    } catch {
-      currentUserLabel.value = ''
-    }
-    void loadWorkflows()
-    await loadChatGroups()
-    await applyChatRouteAfterLoadGroups()
     void loadSessions()
     void loadSkillRiskLookup()
     document.addEventListener('visibilitychange', onDocumentVisibility)
@@ -1828,7 +1315,6 @@ function createChatPageState () {
     }
   }
 
-  /** 助手气泡尚无可见正文时显示等待动画。群聊可有多条助手行，各自在出字前显示波浪。 */
   function isAssistantTypingSlot (idx: number): boolean {
     if (!sending.value) return false
     const msgs = displayMessages.value
@@ -1836,11 +1322,7 @@ function createChatPageState () {
     if (!m || m.role !== 'assistant') return false
     const text = ((m as { displayedContent?: string }).displayedContent || m.content || '').trim()
     if (text !== '') return false
-    // 单聊仍只让「最后一条」显示动画，避免历史里空壳气泡误显
-    const isGroup = !!(currentGroup.value && currentGroup.value.id > 0)
-    if (!isGroup && idx !== msgs.length - 1) return false
-    // Plan-and-execute：已有执行计划清单时主气泡应展示 PlanExecutePanel（与桌面端一致），
-    // 不能仅用打字占位挡住 v-else-if，否则第一次流式中步骤状态/详情无法在主气泡更新。
+    if (idx !== msgs.length - 1) return false
     if (idx === msgs.length - 1) {
       for (let i = thoughtSteps.value.length - 1; i >= 0; i--) {
         const s = thoughtSteps.value[i]
@@ -1853,7 +1335,6 @@ function createChatPageState () {
     return true
   }
 
-  /** 从 thoughtSteps 中提取当前流式中的 plan 任务列表 */
   function getCurrentPlanTasks (): { index: number; task: string; status: 'pending' | 'running' | 'done' | 'error'; details?: { text: string; tone: 'error' | 'muted' }[] }[] {
     for (let i = thoughtSteps.value.length - 1; i >= 0; i--) {
       const s = thoughtSteps.value[i]
@@ -1864,7 +1345,6 @@ function createChatPageState () {
     return []
   }
 
-  /** 与 getCurrentPlanTasks 一致：取最后一条 plan_execute（避免 react_steps 里多条清单时主气泡显示旧的） */
   function getPlanExecuteTasksFromMessage (m: { reactSteps?: ChatReactStep[] }): PlanTaskRowWeb[] {
     const rs = m.reactSteps
     if (!rs?.length) return []
@@ -1886,7 +1366,6 @@ function createChatPageState () {
     return t === GENERIC_STREAM_FAILURE_ZH.replace(/\s+/g, '')
   }
 
-  /** 同一轮若有多条 assistant 历史消息带 plan，只显示最后那一张；流式中则由底部当前 plan 卡接管。 */
   function shouldRenderPlanExecuteForMessage (idx: number): boolean {
     const msgs = displayMessages.value as Array<{ role: string, reactSteps?: ChatReactStep[] }>
     const m = msgs[idx]
@@ -1901,7 +1380,6 @@ function createChatPageState () {
     return true
   }
 
-  /** 被后续计划卡覆盖且仅含通用失败占位文案的 assistant 历史消息整条隐藏。 */
   function shouldHideAssistantPlanMessage (idx: number): boolean {
     const msgs = displayMessages.value as Array<{ role: string, content?: string, displayedContent?: string, reactSteps?: ChatReactStep[] }>
     const m = msgs[idx]
@@ -1912,7 +1390,6 @@ function createChatPageState () {
     return isGenericStreamFailureText(text)
   }
 
-  /** 计划卡存在时，隐藏其下方的通用失败占位文案（与桌面端一致）。 */
   function shouldHideAssistantMessageText (idx: number): boolean {
     const msgs = displayMessages.value as Array<{ role: string, content?: string, displayedContent?: string, reactSteps?: ChatReactStep[] }>
     const m = msgs[idx]
@@ -1946,14 +1423,10 @@ function createChatPageState () {
 
   return {
     t,
-    chatMode,
     agents,
     agentsLoading,
-    workflowsLoading,
     agentId,
-    workflowId,
     agentOptions,
-    workflowOptions,
     sessionId,
     sessionBusy,
     sessionsList,
@@ -1996,11 +1469,7 @@ function createChatPageState () {
     stopping,
     draft,
     composerInputRef,
-    mentionOpen,
-    mentionFiltered,
-    mentionIndex,
-    insertMentionByAgent,
-    onComposerKeyup,
+    onComposerKeydown,
     chatScrollRef,
     fillDraft,
     pendingImages,
@@ -2017,7 +1486,6 @@ function createChatPageState () {
     canSend,
     canStartSession,
     createSession,
-    onComposerKeydown,
     send,
     stopStream,
     thoughtSidebarOpen,
@@ -2045,24 +1513,7 @@ function createChatPageState () {
     userMessageImageUrls,
     userMessageTextToDisplay,
     openImagePreview,
-    openFilePreview,
-    chatGroups,
-    groupChatRailBlocks,
-    groupCaptionTime,
-    currentGroup,
-    groupDialogOpen,
-    groupForm,
-    loadChatGroups,
-    createChatGroup,
-    deleteChatGroup,
-    selectChatGroup,
-    clearCurrentGroup,
-    currentUserLabel,
-    groupInviteDialogOpen,
-    groupInviteAgentIds,
-    groupInviteSelectOptions,
-    openGroupInviteDialog,
-    submitGroupInvite
+    openFilePreview
   }
 }
 

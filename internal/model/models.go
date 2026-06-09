@@ -225,22 +225,3 @@ type TokenUsage struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// ChatGroup represents a group chat with multiple agents.
-type ChatGroup struct {
-	ID        int64     `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name" gorm:"size:255;not null"`
-	CreatedBy string    `json:"created_by" gorm:"size:255"`
-	CreatedAt time.Time `json:"created_at"`
-	// UpdatedAt is last activity: max(chat_sessions.updated_at) for this group, else CreatedAt.
-	UpdatedAt time.Time         `json:"updated_at"`
-	Members   []ChatGroupMember `json:"members" gorm:"foreignKey:GroupID"`
-}
-
-// ChatGroupMember represents an agent member in a group.
-type ChatGroupMember struct {
-	ID        int64     `json:"id" gorm:"primaryKey"`
-	GroupID   int64     `json:"group_id" gorm:"index;not null"`
-	AgentID   int64     `json:"agent_id" gorm:"index;not null"`
-	AgentName string    `json:"agent_name,omitempty" gorm:"-"` // filled from agents join, not a DB column
-	CreatedAt time.Time `json:"created_at"`
-}

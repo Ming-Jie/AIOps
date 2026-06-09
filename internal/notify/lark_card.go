@@ -103,6 +103,16 @@ func normalizeLarkCardMarkdown(s string) string {
 	return string(r[:larkCardMarkdownMaxRunes]) + "\n\n…(truncated)"
 }
 
+// LarkInteractiveMessageContent returns JSON for im/v1 messages with msg_type interactive (card schema 2.0).
+func LarkInteractiveMessageContent(title, markdownBody string) string {
+	return larkInteractiveContentString(title, markdownBody)
+}
+
+// LarkCardTitleAndBody splits full text into card header title and markdown body (first line → title when multi-line).
+func LarkCardTitleAndBody(fullText string) (title, body string) {
+	return larkCardTitleAndMarkdown(nil, fullText)
+}
+
 // larkInteractiveContentString returns JSON string for im/v1/messages content field.
 func larkInteractiveContentString(title, markdownBody string) string {
 	m := buildLarkInteractiveCardMap(title, markdownBody)

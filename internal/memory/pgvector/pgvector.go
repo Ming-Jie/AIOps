@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fisk086/sya/internal/embedding"
-	"github.com/fisk086/sya/internal/memory"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/embedding"
+	"github.com/fisk086/aiops/internal/memory"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 // Options tune retrieval; safe zero value uses defaults.

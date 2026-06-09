@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 func init() {
@@ -500,28 +500,49 @@ func init() {
 }
 
 func executeStart(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
-	// 获取 start 节点定义的输入参数
-	inputSchema, _ := input.Config["input_schema"].(map[string]any)
+	data := map[string]any{
+		"type":    "start",
+		"message": input.UserMessage,
+	}
 
-	// 将定义的输入参数设置到 VarContext
-	if inputSchema != nil {
-		for key, val := range inputSchema {
-			input.VarContext.SetInputVariable(key, val)
+	for _, name := range inputFieldNames(input.Config) {
+		if val, ok := input.Variables[name]; ok {
+			data[name] = val
+			input.VarContext.SetInputVariable(name, val)
+			continue
+		}
+		if val, ok := input.VarContext.GetVariable(name); ok {
+			data[name] = val
+			input.VarContext.SetInputVariable(name, val)
 		}
 	}
 
-	return &TaskOutput{
-		Data: map[string]any{
-			"type":    "start",
-			"message": input.UserMessage,
-		},
-	}, nil
+	if inputSchema, ok := input.Config["input_schema"].(map[string]any); ok {
+		if props, ok := inputSchema["properties"].(map[string]any); ok {
+			for key := range props {
+				if !isIdentifier(key) {
+					continue
+				}
+				if _, exists := data[key]; exists {
+					continue
+				}
+				if val, ok := input.Variables[key]; ok {
+					data[key] = val
+					input.VarContext.SetInputVariable(key, val)
+				}
+			}
+		}
+	}
+
+	return &TaskOutput{Data: data}, nil
 }
 
 func executeEnd(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
-	output := input.Variables["last_output"]
+	var output any
 	if mapping, _ := input.Config["output_mapping"].(string); strings.TrimSpace(mapping) != "" {
 		output = resolveTemplate(mapping, input)
+	} else {
+		output = input.Variables["last_output"]
 	}
 	if output == nil {
 		output = input.UserMessage
@@ -529,7 +550,7 @@ func executeEnd(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 	return &TaskOutput{
 		Data: map[string]any{
 			"type":   "end",
-			"output": output,
+			"output": FormatWorkflowOutput(output),
 		},
 	}, nil
 }
@@ -657,6 +678,9 @@ func executeMCP(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 		"display_name":  toolName,
 		"mode":          "manual",
 	}
+	if schema, ok := input.Config["tool_input_schema"].(map[string]any); ok && len(schema) > 0 {
+		toolMeta["input_schema"] = schema
+	}
 
 	return &TaskOutput{
 		Data: map[string]any{
@@ -782,22 +806,28 @@ func executeCode(ctx context.Context, input *TaskInput) (*TaskOutput, error) {
 	// 使用 VariableContext 解析模板变量
 	resolvedCode := ResolveTemplateForCode(code, input.VarContext)
 
-	// 构建输入变量 (兼容旧代码)
+	// 构建代码沙箱输入：注入已解析的 input_mapping，便于直接使用 body 等上游字段
 	codeInput := map[string]any{
 		"input":        input.UserMessage,
 		"variables":    input.Variables,
 		"node_outputs": input.NodeOutputs,
 	}
+	if mapping, ok := input.Config["input_mapping"].(map[string]any); ok && len(mapping) > 0 {
+		codeInput["mapping"] = mapping
+	}
 
 	// 优先使用 Docker 沙箱，如果不可用则回退到直接执行
 	result, err := ExecuteCode(ctx, language, resolvedCode, codeInput)
 	if err != nil {
+		data := map[string]any{
+			"type":     "code",
+			"language": language,
+			"error":    err.Error(),
+			"output":   strings.TrimSpace(result),
+		}
 		return &TaskOutput{
-			Data: map[string]any{
-				"type":     "code",
-				"language": language,
-				"error":    err.Error(),
-			},
+			Error: err.Error(),
+			Data:  data,
 		}, nil
 	}
 

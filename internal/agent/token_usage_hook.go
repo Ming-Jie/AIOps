@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	agentmodel "github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
+	agentmodel "github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
 	einoschema "github.com/cloudwego/eino/schema"
 )
 

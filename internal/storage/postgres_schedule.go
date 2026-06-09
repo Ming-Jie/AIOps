@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 

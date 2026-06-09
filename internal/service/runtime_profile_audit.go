@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // diffRuntimeProfilePersistence returns field names where the client sent a non-empty / meaningful

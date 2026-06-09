@@ -4,8 +4,10 @@ import { pickRandomSlogan } from 'src/data/loginSlogans'
 import { LocalStorage, useQuasar } from 'quasar'
 import { useRoute, useRouter } from 'vue-router'
 import { api, fetchAuthConfig } from 'boot/axios'
-import type { TokenResponse, UserResponse } from 'src/api/types'
+import type { UserResponse } from 'src/api/types'
 import { clearAdminCache, setAdminCache } from 'src/auth/adminCache'
+
+interface TokenResponse { access_token: string; refresh_token: string; user: UserResponse }
 
 function firstQuery (q: unknown): string | undefined {
   if (Array.isArray(q)) {

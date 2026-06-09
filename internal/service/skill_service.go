@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/skills"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/skills"
+	"github.com/fisk086/aiops/internal/storage"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

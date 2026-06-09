@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // OpenAPIDomainFromIMConfig returns the Open Platform base URL used for HTTP + long-connection WS.

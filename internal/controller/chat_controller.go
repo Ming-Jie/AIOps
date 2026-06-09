@@ -9,17 +9,19 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/auth"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
-	"github.com/fisk086/sya/internal/storage"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/fisk086/aiops/internal/auth"
+	"github.com/fisk086/aiops/internal/imhistory"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/storage"
 	"github.com/google/uuid"
 )
 
@@ -40,6 +42,7 @@ func flushSSEBytes(hc *app.RequestContext, p []byte) {
 
 type ChatController struct {
 	chatService *service.ChatService
+	imHistory   *service.IMHistoryService
 	jwtCfg      auth.JWTConfig
 	userStore   storage.UserStore
 	rbacService *service.RBACService
@@ -52,6 +55,10 @@ func NewChatController(chatService *service.ChatService, jwtCfg auth.JWTConfig, 
 		ctrl.rbacService = rbacService[0]
 	}
 	return ctrl
+}
+
+func (c *ChatController) SetIMHistoryService(svc *service.IMHistoryService) {
+	c.imHistory = svc
 }
 
 func (c *ChatController) getUserForMiddleware(userID int64) (*auth.User, error) {
@@ -98,12 +105,6 @@ func (c *ChatController) RegisterRoutes(r *server.Hertz) {
 	protected.GET("/activity", c.GetActivity)
 
 	// Chat groups: handlers in chat_group_controller.go (register /groups/stream before /groups/:id)
-	protected.POST("/groups/stream", c.StreamGroupChat)
-	protected.GET("/groups", c.ListGroups)
-	protected.POST("/groups", c.CreateGroup)
-	protected.GET("/groups/:id", c.GetGroup)
-	protected.PUT("/groups/:id", c.UpdateGroup)
-	protected.DELETE("/groups/:id", c.DeleteGroup)
 }
 
 func (c *ChatController) chatSessionsUnavailable(ctx context.Context, hc *app.RequestContext) {
@@ -118,12 +119,53 @@ func (c *ChatController) checkAgentAccess(ctx context.Context, hc *app.RequestCo
 	if user == nil {
 		return false
 	}
+	if c.rbacService == nil {
+		return user.IsAdmin
+	}
 	agent, err := c.chatService.GetAgent(ctx, agentID)
 	if err != nil || agent == nil {
 		logger.Warn("agent not found for access check", "agent_id", agentID)
 		return false
 	}
 	return c.rbacService.CheckAgentAccess(ctx, user.ID, agent.Name, user.IsAdmin)
+}
+
+func (c *ChatController) canAccessSession(ctx context.Context, hc *app.RequestContext, sess *schema.ChatSession) bool {
+	if sess == nil {
+		return false
+	}
+	user := auth.GetCurrentUser(hc)
+	if user == nil {
+		return false
+	}
+	if sess.UserID == strconv.FormatInt(user.ID, 10) {
+		return true
+	}
+	if imhistory.IsIMUserID(sess.UserID) {
+		return c.checkAgentAccess(ctx, hc, sess.AgentID)
+	}
+	return false
+}
+
+func mergeWebAndIMSessions(web []schema.ChatSession, im []imhistory.IMChatSession) []schema.ChatSession {
+	out := make([]schema.ChatSession, 0, len(web)+len(im))
+	out = append(out, web...)
+	for _, s := range im {
+		out = append(out, schema.ChatSession{
+			SessionID: s.SessionID,
+			AgentID:   s.AgentID,
+			UserID:    s.UserID,
+			Title:     s.Title,
+			CreatedAt: s.CreatedAt,
+			UpdatedAt: s.UpdatedAt,
+			IMChannel: s.IMChannel,
+			IMUserID:  s.IMUserID,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+	return out
 }
 
 // GetSession returns one session row (includes group_id for group-chat URL restore).
@@ -147,9 +189,15 @@ func (c *ChatController) GetSession(ctx context.Context, hc *app.RequestContext)
 		hc.JSON(http.StatusInternalServerError, schema.ErrorResponse(err.Error()))
 		return
 	}
-	if sess.UserID != strconv.FormatInt(user.ID, 10) {
+	if !c.canAccessSession(ctx, hc, sess) {
 		hc.JSON(http.StatusForbidden, schema.ErrorResponse("forbidden"))
 		return
+	}
+	if imhistory.IsIMUserID(sess.UserID) && c.imHistory != nil {
+		if enriched, err := c.imHistory.GetIMSession(ctx, sess.AgentID, sess.SessionID); err == nil && enriched != nil {
+			sess.IMChannel = enriched.IMChannel
+			sess.IMUserID = enriched.IMUserID
+		}
 	}
 	hc.JSON(http.StatusOK, schema.SuccessResponse(sess))
 }
@@ -188,7 +236,7 @@ func (c *ChatController) ListSessionMessages(ctx context.Context, hc *app.Reques
 		hc.JSON(http.StatusInternalServerError, schema.ErrorResponse(sessErr.Error()))
 		return
 	}
-	if sess.UserID != strconv.FormatInt(user.ID, 10) {
+	if !c.canAccessSession(ctx, hc, sess) {
 		hc.JSON(http.StatusForbidden, schema.ErrorResponse("forbidden"))
 		return
 	}
@@ -307,11 +355,23 @@ func (c *ChatController) ListSessions(ctx context.Context, hc *app.RequestContex
 	if offset < 0 {
 		offset = 0
 	}
+	if c.rbacService != nil && !c.checkAgentAccess(ctx, hc, agentID) {
+		hc.JSON(http.StatusForbidden, schema.ErrorResponse("no permission to use this agent"))
+		return
+	}
 	uid := strconv.FormatInt(user.ID, 10)
 	list, err := c.chatService.ListChatSessions(ctx, agentID, uid, limit, offset)
 	if err != nil {
 		hc.JSON(http.StatusInternalServerError, schema.ErrorResponse(err.Error()))
 		return
+	}
+	if c.imHistory != nil {
+		imList, imErr := c.imHistory.ListIMSessions(ctx, agentID, "all", limit, offset)
+		if imErr != nil {
+			logger.Warn("chat list im sessions failed", "agent_id", agentID, "err", imErr)
+		} else {
+			list = mergeWebAndIMSessions(list, imList)
+		}
 	}
 	hc.JSON(http.StatusOK, schema.SuccessResponse(list))
 }
@@ -340,7 +400,7 @@ func (c *ChatController) CreateSession(ctx context.Context, hc *app.RequestConte
 		return
 	}
 	uid := strconv.FormatInt(user.ID, 10)
-	sess, err := c.chatService.CreateChatSession(ctx, req.AgentID, uid, req.GroupID)
+	sess, err := c.chatService.CreateChatSession(ctx, req.AgentID, uid, 0)
 	if err != nil {
 		if errors.Is(err, storage.ErrAgentNotFound) {
 			hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
@@ -396,12 +456,10 @@ func (c *ChatController) StopChat(ctx context.Context, hc *app.RequestContext) {
 // @Router /chat [post]
 func (c *ChatController) Chat(ctx context.Context, hc *app.RequestContext) {
 	var req schema.ChatRequest
-	if err := hc.BindAndValidate(&req); err != nil {
-		logger.Warn("chat request validation failed", "err", err)
+	if err := bindChatRequest(hc, &req, "POST /chat"); err != nil {
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse(err.Error()))
 		return
 	}
-
 	beforeCT := req.ClientType
 	ua := string(hc.GetHeader("User-Agent"))
 	req.ClientType = NormalizeClientTypeFromUserAgent(req.ClientType, ua)
@@ -458,8 +516,7 @@ func (c *ChatController) Chat(ctx context.Context, hc *app.RequestContext) {
 // @Router /chat/stream [post]
 func (c *ChatController) StreamChat(ctx context.Context, hc *app.RequestContext) {
 	var req schema.ChatRequest
-	if err := hc.BindAndValidate(&req); err != nil {
-		logger.Warn("chat stream request validation failed", "err", err)
+	if err := bindChatRequest(hc, &req, "POST /chat/stream"); err != nil {
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse(err.Error()))
 		return
 	}
@@ -591,11 +648,11 @@ func (c *ChatController) prepareChatSession(ctx context.Context, hc *app.Request
 		}
 	}
 	if req.SessionID == "" && userID != "" && req.AgentID > 0 {
-		sess, err := c.chatService.CreateChatSession(ctx, req.AgentID, userID, 0)
-		if err == nil {
-			req.SessionID = sess.SessionID
-		} else {
-			logger.Warn("chat auto-create session skipped", "agent_id", req.AgentID, "err", err)
+		sid, err := c.chatService.ResolveOrCreateChatSession(ctx, req.AgentID, userID)
+		if err != nil {
+			logger.Warn("chat resolve session skipped", "agent_id", req.AgentID, "err", err)
+		} else if sid != "" {
+			req.SessionID = sid
 		}
 	}
 }

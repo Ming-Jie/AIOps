@@ -3,7 +3,8 @@ import { useI18n } from 'vue-i18n'
 import { LocalStorage, useQuasar } from 'quasar'
 import { useRouter } from 'vue-router'
 import { api } from 'boot/axios'
-import type { Agent, APIResponse, CreateAgentRequest, UpdateAgentRequest, Skill, MCPConfig } from 'src/api/types'
+import type { Agent, APIResponse, CreateAgentRequest, UpdateAgentRequest, Skill, MCPConfig, KnowledgeBase, ModelConfig } from 'src/api/types'
+import type { LarkRegisterAppSession } from 'src/api/larkRegisterApp'
 
 export interface UserOption {
   id: number
@@ -35,6 +36,7 @@ export function useAgentsPage () {
     { name: 'description', label: t('description'), field: 'description', align: 'left' as const },
     { name: 'skill_count', label: t('colSkillCount'), field: (row: Agent) => row.skill_ids?.length ?? 0, align: 'center' as const },
     { name: 'mcp_count', label: t('colMcpConfigCount'), field: (row: Agent) => row.mcp_config_ids?.length ?? 0, align: 'center' as const },
+    { name: 'kb_count', label: t('colKbCount'), field: (row: Agent) => row.kb_ids?.length ?? 0, align: 'center' as const },
     {
       name: 'is_active',
       label: t('status'),
@@ -56,6 +58,7 @@ export function useAgentsPage () {
 
   const runtimeProfile = reactive({
     llm_model: '',
+    model_config_id: 0 as number,
     temperature: 0.7,
     system_prompt: '',
     stream_enabled: true,
@@ -75,10 +78,9 @@ export function useAgentsPage () {
       bot_name: '',
       app_id: '',
       app_secret: '',
-      verification_token: '',
-      encrypt_key: '',
+      allowed_users: [] as string[],
       lark_open_domain: '',
-      ws_enabled: false,
+      ws_enabled: true,
       telegram_token: '',
       telegram_chat_id: '',
       auto_reply: false,
@@ -88,9 +90,12 @@ export function useAgentsPage () {
 
   const availableSkills = ref<Skill[]>([])
   const availableMcpConfigs = ref<MCPConfig[]>([])
+  const availableKbs = ref<KnowledgeBase[]>([])
   const availableUsers = ref<UserOption[]>([])
+  const availableModelConfigs = ref<ModelConfig[]>([])
   const selectedSkillIds = ref<string[]>([])
   const selectedMcpConfigIds = ref<number[]>([])
+  const selectedKbIds = ref<number[]>([])
 
   async function load () {
     loading.value = true
@@ -109,19 +114,25 @@ export function useAgentsPage () {
 
   async function loadAvailableOptions () {
     try {
-      const [skillsRes, mcpRes, usersRes] = await Promise.all([
+      const [skillsRes, mcpRes, usersRes, kbRes, modelsRes] = await Promise.all([
         api.get<APIResponse<Skill[]>>('/skills'),
         api.get<APIResponse<MCPConfig[]>>('/mcp/configs'),
-        api.get<APIResponse<{ list: UserOption[] }>>('/auth/users')
+        api.get<APIResponse<{ list: UserOption[] }>>('/auth/users'),
+        api.get<APIResponse<KnowledgeBase[]>>('/knowledge-base'),
+        api.get<APIResponse<ModelConfig[]>>('/models')
       ])
       availableSkills.value = (skillsRes.data.data ?? []) as Skill[]
       availableMcpConfigs.value = (mcpRes.data.data ?? []) as MCPConfig[]
+      availableKbs.value = (kbRes.data.data ?? []) as KnowledgeBase[]
       const usersData = usersRes.data.data as { list?: UserOption[] }
       availableUsers.value = usersData?.list ?? []
+      availableModelConfigs.value = (modelsRes.data.data ?? []) as ModelConfig[]
     } catch {
       availableSkills.value = []
       availableMcpConfigs.value = []
+      availableKbs.value = []
       availableUsers.value = []
+      availableModelConfigs.value = []
     }
   }
 
@@ -129,6 +140,7 @@ export function useAgentsPage () {
   function resetRuntimeProfileDefaults () {
     Object.assign(runtimeProfile, {
       llm_model: '',
+      model_config_id: 0,
       temperature: 0.7,
       system_prompt: '',
       stream_enabled: true,
@@ -156,6 +168,7 @@ export function useAgentsPage () {
 
       selectedSkillIds.value = agent.skill_ids ?? []
       selectedMcpConfigIds.value = agent.mcp_config_ids ?? []
+      selectedKbIds.value = [] // list payload has no kb_ids; filled by loadAgentRuntime below
 
       resetRuntimeProfileDefaults()
       await loadAgentRuntime(agent.id)
@@ -170,6 +183,7 @@ export function useAgentsPage () {
 
       selectedSkillIds.value = []
       selectedMcpConfigIds.value = []
+      selectedKbIds.value = []
 
       Object.assign(runtimeProfile, {
         source_agent: 'general_chat_agent',
@@ -181,6 +195,7 @@ export function useAgentsPage () {
         task_template: '',
         expected_output: '',
         llm_model: '',
+        model_config_id: 0,
         temperature: 0.7,
         stream_enabled: true,
         memory_enabled: false,
@@ -199,10 +214,9 @@ export function useAgentsPage () {
           bot_name: '',
           app_id: '',
           app_secret: '',
-          verification_token: '',
-          encrypt_key: '',
+          allowed_users: [] as string[],
           lark_open_domain: '',
-          ws_enabled: false,
+          ws_enabled: true,
           telegram_token: '',
           telegram_chat_id: '',
           auto_reply: false,
@@ -218,9 +232,11 @@ export function useAgentsPage () {
       const { data } = await api.get<APIResponse<Agent & { runtime_profile?: Record<string, unknown> }>>(`/agents/${agentId}`)
       const rp = data.data?.runtime_profile
       if (rp) {
+        selectedKbIds.value = (rp.kb_ids as number[]) || []
         const imConfig = (rp.im_config as Record<string, unknown>) || {}
         Object.assign(runtimeProfile, {
           llm_model: rp.llm_model || '',
+          model_config_id: (rp.model_config_id as number) || 0,
           temperature: rp.temperature ?? 0.7,
           system_prompt: typeof rp.system_prompt === 'string' ? rp.system_prompt : '',
           stream_enabled: rp.stream_enabled ?? true,
@@ -240,8 +256,9 @@ export function useAgentsPage () {
             bot_name: String(imConfig.bot_name || ''),
             app_id: String(imConfig.app_id || ''),
             app_secret: String(imConfig.app_secret || ''),
-            verification_token: String(imConfig.verification_token || ''),
-            encrypt_key: String(imConfig.encrypt_key || ''),
+            allowed_users: Array.isArray(imConfig.allowed_users)
+              ? (imConfig.allowed_users as string[]).map(String)
+              : [],
             lark_open_domain: (() => {
               const d = String(imConfig.lark_open_domain || '').trim()
               if (d) return d
@@ -251,7 +268,7 @@ export function useAgentsPage () {
               }
               return ''
             })(),
-            ws_enabled: false,
+            ws_enabled: imConfig.ws_enabled !== false,
             telegram_token: String(imConfig.telegram_token || ''),
             telegram_chat_id: String(imConfig.telegram_chat_id || ''),
             auto_reply: Boolean(imConfig.auto_reply),
@@ -277,11 +294,13 @@ export function useAgentsPage () {
       task_template: null,
       expected_output: null,
       llm_model: runtimeProfile.llm_model || null,
+      model_config_id: runtimeProfile.model_config_id > 0 ? runtimeProfile.model_config_id : null,
       temperature: runtimeProfile.temperature,
       stream_enabled: runtimeProfile.stream_enabled,
       memory_enabled: runtimeProfile.memory_enabled,
       skill_ids: selectedSkillIds.value,
       mcp_config_ids: selectedMcpConfigIds.value,
+      kb_ids: selectedKbIds.value,
       execution_mode: runtimeProfile.execution_mode || 'single-call',
       max_iterations: runtimeProfile.max_iterations > 0 ? runtimeProfile.max_iterations : undefined,
       plan_prompt: runtimeProfile.plan_prompt || undefined,
@@ -294,14 +313,19 @@ export function useAgentsPage () {
           return undefined
         }
         const c = { ...runtimeProfile.im_config }
-        c.ws_enabled = false
+        if (runtimeProfile.im_enabled === 'lark' || runtimeProfile.im_enabled === 'telegram' || runtimeProfile.im_enabled === 'dingtalk') {
+          c.ws_enabled = true
+        } else {
+          c.ws_enabled = false
+        }
         if (runtimeProfile.im_enabled !== 'telegram') {
           c.webhook_url = ''
           c.secret = ''
         }
         if (runtimeProfile.im_enabled !== 'lark') {
-          c.verification_token = ''
-          c.encrypt_key = ''
+          c.allowed_users = []
+        } else if (!c.allowed_users?.length) {
+          delete (c as { allowed_users?: string[] }).allowed_users
         }
         return c
       })()
@@ -395,6 +419,44 @@ export function useAgentsPage () {
     })
   }
 
+  function appendAllowedOpenID (openID: string) {
+    const id = String(openID || '').trim()
+    if (!id) return
+    const list = runtimeProfile.im_config.allowed_users
+    if (!list.includes(id)) {
+      list.push(id)
+    }
+  }
+
+  function applyLarkQrSessionToForm (sess: LarkRegisterAppSession) {
+    if (!sess.app_id) return
+    runtimeProfile.im_enabled = 'lark'
+    runtimeProfile.im_config.app_id = sess.app_id
+    runtimeProfile.im_config.app_secret = sess.app_secret ?? ''
+    if (sess.operator_open_id) {
+      appendAllowedOpenID(sess.operator_open_id)
+    }
+  }
+
+  async function onLarkQrCompleted (sess: LarkRegisterAppSession) {
+    applyLarkQrSessionToForm(sess)
+
+    if (sess.channel_bound && isEdit.value && editId.value > 0) {
+      await loadAgentRuntime(editId.value)
+      $q.notify({ type: 'positive', message: t('imLarkQrBoundOk'), timeout: 6000 })
+      return
+    }
+    if (sess.app_id) {
+      $q.notify({ type: 'positive', message: t('imLarkQrFillCredentials') })
+      return
+    }
+    $q.notify({ type: 'positive', message: t('imLarkQrDone') })
+  }
+
+  function onLarkQrFailed (msg: string) {
+    $q.notify({ type: 'negative', message: msg, timeout: 9000 })
+  }
+
   onMounted(() => {
     void load()
     void loadAvailableOptions()
@@ -411,17 +473,23 @@ export function useAgentsPage () {
     goChat,
     dialogOpen,
     isEdit,
+    editId,
     form,
     runtimeProfile,
     saving,
     openDialog,
     saveAgent,
     confirmDelete,
+    onLarkQrCompleted,
+    onLarkQrFailed,
     availableSkills,
     availableMcpConfigs,
+    availableKbs,
     availableUsers,
+    availableModelConfigs,
     selectedSkillIds,
     selectedMcpConfigIds,
+    selectedKbIds,
     onSystemPromptPaste
   }
 }

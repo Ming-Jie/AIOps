@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // streamClientType normalizes JSON client_type for routing. Only "desktop" selects desktop-specific

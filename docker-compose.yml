@@ -1,10 +1,15 @@
-# SuiYu Agent 服务端 — Docker Compose
+# AIOps 服务端 — Docker Compose
 #
 # 适用场景：无本仓库源码、仅持本文件与 .env 即可部署（镜像从仓库拉取）。
 # 默认包含 PostgreSQL + pgvector；`docker compose up -d` 即可。
 # 若使用外部 Postgres，可在 .env 中设置 DATABASE_URL 覆盖默认连接串（仍会启动内置 postgres，高级场景可用 override 禁用）。
 #
-name: suiyu-agent
+# OpenViking 知识库后端：默认不启动。需要时用 profile 启动：
+#   docker compose --profile openviking up -d
+# 同时设置 .env 中 OPENVIKING_ENABLED=true 以及 API key。
+# 使用外部 OpenViking 服务只需在 .env 中配置 OPENVIKING_URL 和 OPENVIKING_API_KEY，无需 profile。
+#
+name: aiops
 
 services:
   postgres:
@@ -12,11 +17,11 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-sya}
+      POSTGRES_DB: ${POSTGRES_DB:-aiops}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - suiyu-pg:/var/lib/postgresql/data
+      - aiops-pg:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
@@ -24,9 +29,27 @@ services:
       retries: 10
       start_period: 15s
 
+  openviking:
+    profiles: ["openviking"]
+    image: ghcr.io/volcengine/openviking:latest
+    restart: unless-stopped
+    ports:
+      - "${OPENVIKING_PORT:-1933}:1933"
+    volumes:
+      - ./deploy/openviking/ov.conf:/app/.openviking/ov.conf:ro
+      - openviking-data:/app/.openviking/data
+    environment:
+      OPENVIKING_WITH_BOT: "0"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:1933/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   app:
-    # 无源码时从镜像运行；可改 .env 中的 SYA_IMAGE 指向你的私有仓库
-    image: ${SYA_IMAGE:-ghcr.nju.edu.cn/fisker086/suiyu-agent:latest}
+    # 无源码时从镜像运行；可改 .env 中的 AIOPS_IMAGE 指向你的私有仓库
+    image: ${AIOPS_IMAGE:-ghcr.nju.edu.cn/fisker086/aiops:latest}
     restart: unless-stopped
     # 若在本仓库内从 Dockerfile 构建，请改用下面三行并注释掉上面的 image：
     # build:
@@ -41,7 +64,7 @@ services:
     ports:
       - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-sya}?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-aiops}?sslmode=disable}
       SERVER_PORT: ${SERVER_PORT:-8080}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-text}
@@ -60,6 +83,9 @@ services:
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1536}
       MEMORY_PROVIDER: ${MEMORY_PROVIDER:-pgvector}
       MEMORY_RETRIEVE_TOP_K: ${MEMORY_RETRIEVE_TOP_K:-8}
+      OPENVIKING_ENABLED: ${OPENVIKING_ENABLED:-false}
+      OPENVIKING_URL: ${OPENVIKING_URL:-http://openviking:1933}
+      OPENVIKING_API_KEY: ${OPENVIKING_API_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
@@ -67,14 +93,16 @@ services:
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-changeme}
       DISABLE_LOGIN_CAPTCHA: ${DISABLE_LOGIN_CAPTCHA:-false}
       SKILLS_DIR: /app/skills
-      UPLOAD_DIR: /app/data/uploads
+      UPLOAD_DIR: ${UPLOAD_DIR:-/app/data/uploads}
     volumes:
       # Mount repo skills so new SKILL.md dirs appear without rebuilding the image (dev / hot-add).
       - ./skills:/app/skills:ro
-      - app_uploads:/app/data/uploads
+      # KB originals + chat uploads. Set UPLOAD_HOST_PATH in .env to bind-mount host disk; else named volume.
+      - ${UPLOAD_HOST_PATH:-app_uploads}:/app/data/uploads
       # Docker socket for sandbox execution (required for SANDBOX_TYPE=docker)
       - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
-  suiyu-pg:
+  aiops-pg:
   app_uploads:
+  openviking-data:

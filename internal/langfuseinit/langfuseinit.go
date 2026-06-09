@@ -40,7 +40,7 @@ func Init() (flush func(), ok bool) {
 		Host:      host,
 		PublicKey: publicKey,
 		SecretKey: secretKey,
-		Name:      "sya",
+		Name:      "aiops",
 	}
 	if n := strings.TrimSpace(os.Getenv("LANGFUSE_TRACE_NAME")); n != "" {
 		cfg.Name = n

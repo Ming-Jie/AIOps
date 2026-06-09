@@ -4,7 +4,7 @@ import { useQuasar } from 'quasar'
 import { api } from 'boot/axios'
 import type { APIResponse } from 'src/api/types'
 
-export type BotType = 'lark' | 'telegram'
+export type BotType = 'lark' | 'telegram' | 'dingtalk'
 
 /** 智能机器人列表行 */
 export interface BotRow {
@@ -23,6 +23,14 @@ export interface BotListResponse {
   bot_count: number
 }
 
+function botApiPrefix (type: BotType): string {
+  switch (type) {
+    case 'lark': return '/larkbots'
+    case 'telegram': return '/telegrambots'
+    case 'dingtalk': return '/dingtalkbots'
+  }
+}
+
 export function useBotPage () {
   const { t } = useI18n()
   const $q = useQuasar()
@@ -32,6 +40,11 @@ export function useBotPage () {
   const bots = ref<BotRow[]>([])
   const botCount = ref(0)
   const running = ref(false)
+
+  const historyDialogOpen = ref(false)
+  const historyAgentId = ref(0)
+  const historyAgentName = ref('')
+  const historyChannel = ref<'lark' | 'telegram' | 'dingtalk' | 'all'>('all')
 
   const columns = computed(() => {
     const cols = [
@@ -48,16 +61,21 @@ export function useBotPage () {
   async function load () {
     loading.value = true
     try {
-      const [larkRes, telegramRes] = await Promise.all([
+      const [larkRes, telegramRes, dingtalkRes] = await Promise.all([
         api.get<APIResponse<BotListResponse>>('/larkbots'),
-        api.get<APIResponse<BotListResponse>>('/telegrambots')
+        api.get<APIResponse<BotListResponse>>('/telegrambots'),
+        api.get<APIResponse<BotListResponse>>('/dingtalkbots')
       ])
       const larkBots = ((larkRes.data.data as BotListResponse)?.bots || []).map(b => ({ ...b, bot_type: 'lark' as BotType }))
       const telegramBots = ((telegramRes.data.data as BotListResponse)?.bots || []).map(b => ({ ...b, bot_type: 'telegram' as BotType }))
-      const allBots = [...larkBots, ...telegramBots]
+      const dingtalkBots = ((dingtalkRes.data.data as BotListResponse)?.bots || []).map(b => ({ ...b, bot_type: 'dingtalk' as BotType }))
+      const allBots = [...larkBots, ...telegramBots, ...dingtalkBots]
       bots.value = allBots
       botCount.value = allBots.length
-      running.value = ((larkRes.data.data as BotListResponse)?.running || (telegramRes.data.data as BotListResponse)?.running) || false
+      running.value =
+        ((larkRes.data.data as BotListResponse)?.running ||
+        (telegramRes.data.data as BotListResponse)?.running ||
+        (dingtalkRes.data.data as BotListResponse)?.running) || false
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } }
       $q.notify({ type: 'negative', message: err.response?.data?.message ?? t('loadFailed') })
@@ -71,7 +89,8 @@ export function useBotPage () {
     try {
       await Promise.all([
         api.post('/larkbots/start'),
-        api.post('/telegrambots/start')
+        api.post('/telegrambots/start'),
+        api.post('/dingtalkbots/start')
       ])
       $q.notify({ type: 'positive', message: t('botStarted') })
       await load()
@@ -88,7 +107,8 @@ export function useBotPage () {
     try {
       await Promise.all([
         api.post('/larkbots/stop'),
-        api.post('/telegrambots/stop')
+        api.post('/telegrambots/stop'),
+        api.post('/dingtalkbots/stop')
       ])
       $q.notify({ type: 'positive', message: t('botStopped') })
       await load()
@@ -103,7 +123,7 @@ export function useBotPage () {
   async function unregister (agentId: number, type: BotType) {
     rowBusyAgentId.value = agentId
     try {
-      await api.delete(`${type === 'lark' ? '/larkbots' : '/telegrambots'}/${agentId}`)
+      await api.delete(`${botApiPrefix(type)}/${agentId}`)
       $q.notify({ type: 'positive', message: t('botUnregistered') })
       await load()
     } catch (e: unknown) {
@@ -117,7 +137,7 @@ export function useBotPage () {
   async function startRowAgent (agentId: number, type: BotType) {
     rowBusyAgentId.value = agentId
     try {
-      await api.post(`${type === 'lark' ? '/larkbots' : '/telegrambots'}/${agentId}/ws/start`)
+      await api.post(`${botApiPrefix(type)}/${agentId}/ws/start`)
       $q.notify({ type: 'positive', message: t('botRowStarted') })
       await load()
     } catch (e: unknown) {
@@ -131,7 +151,7 @@ export function useBotPage () {
   async function stopRowAgent (agentId: number, type: BotType) {
     rowBusyAgentId.value = agentId
     try {
-      await api.post(`${type === 'lark' ? '/larkbots' : '/telegrambots'}/${agentId}/ws/stop`)
+      await api.post(`${botApiPrefix(type)}/${agentId}/ws/stop`)
       $q.notify({ type: 'positive', message: t('botRowStopped') })
       await load()
     } catch (e: unknown) {
@@ -140,6 +160,13 @@ export function useBotPage () {
     } finally {
       rowBusyAgentId.value = null
     }
+  }
+
+  function openHistory (row: BotRow) {
+    historyAgentId.value = row.agent_id
+    historyAgentName.value = row.agent_name || ''
+    historyChannel.value = row.bot_type ?? 'all'
+    historyDialogOpen.value = true
   }
 
   function confirmUnregister (agentId: number, type: BotType, agentName: string) {
@@ -169,6 +196,11 @@ export function useBotPage () {
     unregister,
     confirmUnregister,
     startRowAgent,
-    stopRowAgent
+    stopRowAgent,
+    historyDialogOpen,
+    historyAgentId,
+    historyAgentName,
+    historyChannel,
+    openHistory
   }
 }

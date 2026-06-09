@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/fisk086/sya/internal/auth"
-	"github.com/fisk086/sya/internal/authprovider"
+	"github.com/fisk086/aiops/internal/auth"
+	"github.com/fisk086/aiops/internal/authprovider"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"

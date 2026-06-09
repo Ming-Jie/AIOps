@@ -3,8 +3,8 @@ package storage
 import (
 	"context"
 
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 type Storage interface {
@@ -70,6 +70,8 @@ type Storage interface {
 	UpdateChatSessionTitle(ctx context.Context, sessionID, userID, title string) error
 	DeleteChatSession(ctx context.Context, sessionID string) error
 	ListChatSessions(ctx context.Context, agentID int64, userID string, limit, offset int) ([]schema.ChatSession, error)
+	// ListChatSessionsByUserPrefix lists sessions whose user_id starts with prefix (e.g. im:lark:).
+	ListChatSessionsByUserPrefix(ctx context.Context, agentID int64, userIDPrefix string, limit, offset int) ([]schema.ChatSession, error)
 	// ListRecentSessionMessages returns up to limit most recent messages (chronological ASC).
 	ListRecentSessionMessages(ctx context.Context, sessionID string, limit int) ([]schema.ChatHistoryMessage, error)
 	// ListSessionMessagesPage returns messages in created_at order with OFFSET/LIMIT (full-history paging).
@@ -139,13 +141,15 @@ type Storage interface {
 	ListApprovalRequests(filter *ApprovalRequestFilter) ([]*model.ApprovalRequest, int64, error)
 	GetApprovalRequest(id int64) (*model.ApprovalRequest, error)
 	UpdateApprovalRequest(id int64, status, approverID, comment string) error
+}
 
-	// Chat Groups
-	CreateChatGroup(ctx context.Context, req *schema.CreateGroupRequest, userID string) (*model.ChatGroup, error)
-	GetChatGroup(ctx context.Context, id int64) (*model.ChatGroup, error)
-	ListChatGroups(ctx context.Context, userID string) ([]*model.ChatGroup, error)
-	UpdateChatGroup(ctx context.Context, id int64, req *schema.UpdateGroupRequest) (*model.ChatGroup, error)
-	DeleteChatGroup(ctx context.Context, id int64) error
+type ModelConfigStore interface {
+	CreateModelConfig(ctx context.Context, cfg *model.ModelConfig) (*model.ModelConfig, error)
+	GetModelConfig(ctx context.Context, id int64) (*model.ModelConfig, error)
+	ListModelConfigs(ctx context.Context) ([]*model.ModelConfig, error)
+	ListModelConfigsByPurpose(ctx context.Context, purpose string) ([]*model.ModelConfig, error)
+	UpdateModelConfig(ctx context.Context, id int64, cfg *model.ModelConfig) (*model.ModelConfig, error)
+	DeleteModelConfig(ctx context.Context, id int64) error
 }
 
 type AuditLogFilter struct {

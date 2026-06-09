@@ -3,7 +3,7 @@ package mcp
 import (
 	"testing"
 
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 func TestEffectiveConnectionTarget(t *testing.T) {

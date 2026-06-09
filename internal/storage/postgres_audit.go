@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/model"
 )
 
 // sanitizeAuditText ensures PostgreSQL UTF8 TEXT columns accept the value (Go strings may hold invalid UTF-8).

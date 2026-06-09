@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/logger"
+	"github.com/fisk086/aiops/internal/logger"
 )
 
 // isTransientDBErr reports dial / startup errors that often resolve after a short wait (e.g. compose race).

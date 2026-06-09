@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/fisk086/sya/internal/logger"
+	"github.com/fisk086/aiops/internal/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -196,21 +196,7 @@ END $$;`,
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_sessions_agent ON chat_sessions(agent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_sessions_agent_user ON chat_sessions(agent_id, user_id)`,
-		`CREATE TABLE IF NOT EXISTS chat_groups (
-			id BIGSERIAL PRIMARY KEY,
-			name VARCHAR(255) NOT NULL,
-			created_by VARCHAR(255),
-			created_at TIMESTAMPTZ DEFAULT NOW()
-		)`,
-		`CREATE TABLE IF NOT EXISTS chat_group_members (
-			id BIGSERIAL PRIMARY KEY,
-			group_id BIGINT NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
-			agent_id BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-			created_at TIMESTAMPTZ DEFAULT NOW(),
-			UNIQUE(group_id, agent_id)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_chat_group_members_group ON chat_group_members(group_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_chat_group_members_agent ON chat_group_members(agent_id)`,
+
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS agent_memory (
 			id BIGSERIAL PRIMARY KEY,
 			agent_id BIGINT REFERENCES agents(id) ON DELETE CASCADE,
@@ -496,8 +482,7 @@ BEGIN
       USING created_at AT TIME ZONE 'Asia/Shanghai';
   END IF;
 END $$;`,
-		`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES chat_groups(id) ON DELETE SET NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_chat_sessions_group ON chat_sessions(group_id)`,
+
 		`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS code_language VARCHAR(20)`,
 		// Legacy DBs may have skills without content/risk columns (CREATE TABLE IF NOT EXISTS does not alter).
 		`ALTER TABLE skills ADD COLUMN IF NOT EXISTS content TEXT`,
@@ -507,6 +492,52 @@ END $$;`,
 		`ALTER TABLE skills ADD COLUMN IF NOT EXISTS prompt_hint TEXT DEFAULT ''`,
 		`ALTER TABLE skills ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
 		`ALTER TABLE skills ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+
+		// Knowledge base (OpenViking backend). Metadata only; files/vectors live in OpenViking.
+		`CREATE TABLE IF NOT EXISTS knowledge_bases (
+			id BIGSERIAL PRIMARY KEY,
+			owner_id BIGINT NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			description TEXT DEFAULT '',
+			viking_path VARCHAR(512) DEFAULT '',
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_bases_owner ON knowledge_bases(owner_id)`,
+		`CREATE TABLE IF NOT EXISTS kb_documents (
+			id BIGSERIAL PRIMARY KEY,
+			kb_id BIGINT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+			owner_id BIGINT NOT NULL,
+			filename VARCHAR(512) NOT NULL,
+			storage_path VARCHAR(1024) DEFAULT '',
+			viking_uri VARCHAR(1024) DEFAULT '',
+			size BIGINT DEFAULT 0,
+			status VARCHAR(32) NOT NULL DEFAULT 'pending',
+			error TEXT DEFAULT '',
+			task_id VARCHAR(128) DEFAULT '',
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_kb_documents_kb ON kb_documents(kb_id)`,
+		// visibility: private (owner only) | public (all users read + search, owner manages)
+		`ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'private'`,
+		// Knowledge bases bound to an agent for RAG (mirrors skill_ids / mcp_config_ids).
+		`ALTER TABLE agent_runtime ADD COLUMN IF NOT EXISTS kb_ids BIGINT[] DEFAULT '{}'`,
+
+		// Model configs (UI-managed LLM provider configs)
+		`CREATE TABLE IF NOT EXISTS model_configs (
+			id BIGSERIAL PRIMARY KEY,
+			name VARCHAR(100) NOT NULL,
+			provider VARCHAR(20) NOT NULL,
+			model_name VARCHAR(100) NOT NULL,
+			base_url VARCHAR(255) NOT NULL,
+			api_key TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`ALTER TABLE agent_runtime ADD COLUMN IF NOT EXISTS model_config_id BIGINT DEFAULT 0`,
+		`ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`,
+		`ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS purpose VARCHAR(20) NOT NULL DEFAULT 'chat'`,
 	)
 
 	for _, query := range migrations {

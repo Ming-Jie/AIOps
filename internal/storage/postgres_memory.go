@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/model"
 	"github.com/pgvector/pgvector-go"
 )
 

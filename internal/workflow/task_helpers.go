@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/agent"
+	"github.com/fisk086/aiops/internal/agent"
 )
 
 var agentRuntime *agent.Runtime
@@ -162,6 +162,12 @@ import sys
 
 input_data = %s
 
+_mapping = input_data.get("mapping")
+if isinstance(_mapping, dict):
+    for _k, _v in _mapping.items():
+        if isinstance(_k, str) and _k.isidentifier():
+            globals()[_k] = _v
+
 # User code starts here
 %s
 `, inputJSON, code)
@@ -183,7 +189,13 @@ func executeJavaScript(ctx context.Context, code string, input map[string]any) (
 	inputJSON := mapToJSON(input)
 
 	script := fmt.Sprintf(`
-const input = %s;
+const input_data = %s;
+const mapping = input_data.mapping;
+if (mapping && typeof mapping === "object") {
+  for (const [k, v] of Object.entries(mapping)) {
+    globalThis[k] = v;
+  }
+}
 
 %s
 `, inputJSON, code)

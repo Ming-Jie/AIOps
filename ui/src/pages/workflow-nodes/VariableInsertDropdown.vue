@@ -47,18 +47,18 @@
             :key="field"
             clickable
             v-close-popup
-            @click="insertVar(getNodeVarPath(node.label, field))"
+            @click="insertVar(getNodeVarPath(node.value, field))"
           >
             <q-item-section>
               <q-item-label>{{ field }}</q-item-label>
-              <q-item-label caption class="var-expr">{{ getNodeVarPath(node.label, field) }}</q-item-label>
+              <q-item-label caption class="var-expr">{{ getNodeVarPath(node.value, field) }}</q-item-label>
             </q-item-section>
           </q-item>
           <q-separator />
           <q-item dense class="items-hint">
             <q-item-section>
               <q-item-label caption class="text-grey-6">
-                也支持: {{ `.${node.label}.items[0].json.${getNodeFields(node.value)[0] || 'field'}` }}
+                也支持: {{ itemsPathHint(node.value) }}
               </q-item-label>
             </q-item-section>
           </q-item>
@@ -109,6 +109,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { getNodeOutputFields, getNodeIcon as getNodeIconFromLib } from 'src/lib/upstreamOutputs'
 
 interface UpstreamNode {
   label: string
@@ -152,51 +153,21 @@ function getNodeFields (nodeId: string): string[] {
   if (props.nodeOutputFields && props.nodeOutputFields[nodeId]) {
     return Array.from(new Set(props.nodeOutputFields[nodeId]))
   }
-  const defaultFields: Record<string, string[]> = {
-    start: ['message', 'type'],
-    end: ['output', 'type'],
-    agent: ['content', 'response', 'result'],
-    llm: ['content', 'response', 'result'],
-    condition: ['result', 'branch'],
-    merge: ['outputs', 'result', 'mode'],
-    http: ['body', 'status_code', 'error'],
-    code: ['output', 'result'],
-    tool: ['result', 'output'],
-    knowledge: ['results', 'content'],
-    notify: ['sent', 'message'],
-    ssh: ['output', 'error'],
-    variable: ['value'],
-    template: ['output'],
-    apitest: ['result', 'response'],
-    datamask: ['masked', 'count']
-  }
-  return Array.from(new Set(defaultFields[nodeId] || ['content', 'data', 'result']))
+  const node = props.upstreamNodes?.find(n => n.value === nodeId)
+  return getNodeOutputFields(node?.nodeType || '')
 }
 
-function getNodeVarPath (nodeLabel: string, field: string): string {
-  return `{{.${nodeLabel}.${field}}}`
+function getNodeVarPath (nodeId: string, field: string): string {
+  return `{{${nodeId}.${field}}}`
+}
+
+function itemsPathHint (nodeId: string): string {
+  const field = getNodeFields(nodeId)[0] || 'field'
+  return `{{${nodeId}.items[0].json.${field}}}`
 }
 
 function getNodeIcon (nodeType: string): string {
-  const icons: Record<string, string> = {
-    start: 'play_circle',
-    end: 'stop_circle',
-    agent: 'smart_toy',
-    llm: 'psychology',
-    condition: 'call_split',
-    merge: 'merge_type',
-    http: 'http',
-    code: 'code',
-    tool: 'build',
-    knowledge: 'library_books',
-    notify: 'send',
-    ssh: 'terminal',
-    variable: 'data_object',
-    template: 'text_snippet',
-    apitest: 'api',
-    datamask: 'security'
-  }
-  return icons[nodeType] || 'hub'
+  return getNodeIconFromLib(nodeType)
 }
 
 function insertVar (varPath: string) {

@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/workflow"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/workflow"
 )
 
 type GraphWorkflowService struct {
@@ -322,6 +322,35 @@ func edgesToSchema(edges []model.WorkflowEdge) []schema.WorkflowEdge {
 			Condition:    e.Condition,
 			Label:        e.Label,
 		}
+	}
+	return result
+}
+
+func (s *GraphWorkflowService) ListTaskDefinitions() []schema.WorkflowTaskPublic {
+	tasks := workflow.ListTasks()
+	result := make([]schema.WorkflowTaskPublic, 0, len(tasks))
+	for _, def := range tasks {
+		fields := make(map[string]schema.WorkflowTaskFieldPublic, len(def.ConfigSchema))
+		for key, field := range def.ConfigSchema {
+			fields[key] = schema.WorkflowTaskFieldPublic{
+				Key:         field.Key,
+				Label:       field.Label,
+				Type:        field.Type,
+				Required:    field.Required,
+				Default:     field.Default,
+				Description: field.Description,
+				Options:     field.Options,
+			}
+		}
+		result = append(result, schema.WorkflowTaskPublic{
+			Type:         string(def.Type),
+			Name:         def.Name,
+			Description:  def.Description,
+			Icon:         def.Icon,
+			Color:        def.Color,
+			Category:     def.Category,
+			ConfigSchema: fields,
+		})
 	}
 	return result
 }

@@ -3,7 +3,7 @@ package chathistory
 import (
 	"testing"
 
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 func TestIncludeInLLMContext_skipsEmptyAssistant(t *testing.T) {

@@ -17,26 +17,31 @@ import (
 	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
-	_ "github.com/fisk086/sya/docs"
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/auth"
-	"github.com/fisk086/sya/internal/authprovider"
-	"github.com/fisk086/sya/internal/config"
-	"github.com/fisk086/sya/internal/controller"
-	"github.com/fisk086/sya/internal/embedding"
-	"github.com/fisk086/sya/internal/gateway"
-	"github.com/fisk086/sya/internal/immanager"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/mcp"
-	"github.com/fisk086/sya/internal/memory"
-	"github.com/fisk086/sya/internal/memory/pgvector"
-	"github.com/fisk086/sya/internal/scheduler"
-	agentSchema "github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
-	"github.com/fisk086/sya/internal/skills"
-	"github.com/fisk086/sya/internal/storage"
-	"github.com/fisk086/sya/internal/webui"
-	"github.com/fisk086/sya/internal/workflow"
+	_ "github.com/fisk086/aiops/docs"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/auth"
+	"github.com/fisk086/aiops/internal/authprovider"
+	"github.com/fisk086/aiops/internal/config"
+	"github.com/fisk086/aiops/internal/controller"
+	"github.com/fisk086/aiops/internal/dingtalkbot"
+	"github.com/fisk086/aiops/internal/embedding"
+	"github.com/fisk086/aiops/internal/gateway"
+	"github.com/fisk086/aiops/internal/imhistory"
+	"github.com/fisk086/aiops/internal/imoutbound"
+	"github.com/fisk086/aiops/internal/immanager"
+	"github.com/fisk086/aiops/internal/larkbot"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/mcp"
+	"github.com/fisk086/aiops/internal/memory"
+	"github.com/fisk086/aiops/internal/memory/pgvector"
+	"github.com/fisk086/aiops/internal/openviking"
+	"github.com/fisk086/aiops/internal/scheduler"
+	agentSchema "github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/skills"
+	"github.com/fisk086/aiops/internal/storage"
+	"github.com/fisk086/aiops/internal/webui"
+	"github.com/fisk086/aiops/internal/workflow"
 	"github.com/hertz-contrib/cors"
 	"github.com/hertz-contrib/swagger"
 	"github.com/joho/godotenv"
@@ -131,16 +136,6 @@ func main() {
 		}()
 	}
 
-	if settings.EmbeddingAPIKey != "" {
-		embedService = embedding.NewService(
-			settings.EmbeddingAPIKey,
-			settings.EmbeddingModel,
-			settings.EmbeddingBaseURL,
-			settings.EmbeddingDimension,
-		)
-		logger.Info("embedding service initialized", "model", settings.EmbeddingModel)
-	}
-
 	chatModel, err := newChatModel(settings)
 	if err != nil {
 		logger.Fatal("failed to create chat model", "err", err)
@@ -169,21 +164,58 @@ func main() {
 	if err := imManager.ScanAndRegister(activeStore, runtime); err != nil {
 		logger.Warn("failed to scan and register im bots", "err", err)
 	}
-
 	// Services
 	agentService := service.NewAgentService(activeStore)
 	mcpService := service.NewMCPService(activeStore, mcpClient)
 	channelService := service.NewChannelService(activeStore)
 	workflowService := service.NewWorkflowService(activeStore)
+
+	// Model config service (UI-managed LLM provider configs)
+	var modelSvc *service.ModelService
+	if pg, ok := pgStore.(*storage.PostgresStorage); ok {
+		modelSvc = service.NewModelService(pg)
+		runtime.SetModelProvider(modelSvc)
+		logger.Info("model config service enabled")
+	}
+	// Embedding service for pg long-term memory: always from env config (EMBEDDING_*),
+	// decoupled from UI-managed embedding models to keep stored vectors model/dimension stable.
+	if settings.EmbeddingAPIKey != "" {
+		embedService = embedding.NewService(
+			settings.EmbeddingAPIKey,
+			settings.EmbeddingModel,
+			settings.EmbeddingBaseURL,
+			settings.EmbeddingDimension,
+		)
+		logger.Info("embedding service initialized from env", "model", settings.EmbeddingModel)
+	}
 	memProvider := buildMemoryProvider(settings, embedService, activeStore)
 	if memProvider != nil {
 		logger.Info("long-term memory provider enabled", "provider", settings.MemoryProvider)
 	}
-	chatService := service.NewChatService(runtime, activeStore, memProvider, embedService, workflowService, settings.EmbeddingDimension)
-
-	// Initialize group coordinator for multi-agent group chat capability discovery
-	groupCoordinator := agent.NewGroupCoordinator(activeStore, runtime, agent.NewRuntimeAgentCaller(runtime))
-	runtime.SetGroupCoordinator(groupCoordinator)
+	var kbSvc *service.KnowledgeBaseService
+	if pg, ok := pgStore.(*storage.PostgresStorage); ok && settings.OpenVikingEnabled && gormDB != nil {
+		ovClient := openviking.NewClient(settings.OpenVikingURL, settings.OpenVikingAPIKey)
+		kbSvc = service.NewKnowledgeBaseService(pg, ovClient)
+		logger.Info("knowledge base feature enabled", "openviking_url", settings.OpenVikingURL)
+	} else if settings.OpenVikingEnabled {
+		logger.Warn("OPENVIKING_ENABLED set but knowledge base disabled: requires DATABASE_URL (Postgres)")
+	}
+	chatService := service.NewChatService(runtime, activeStore, memProvider, embedService, workflowService, kbSvc, settings.EmbeddingDimension)
+	if kbSvc != nil {
+		runtime.SetKBContextProvider(func(ctx context.Context, agentID int64, userText string) string {
+			ag, err := activeStore.GetAgent(agentID)
+			if err != nil || ag.RuntimeProfile == nil || len(ag.RuntimeProfile.KBIDs) == 0 {
+				return ""
+			}
+			return kbSvc.BuildRAGContext(ctx, agentID, ag.RuntimeProfile.KBIDs, userText, 5)
+		})
+	}
+	imHistoryRecorder := imhistory.NewRecorder(activeStore, memProvider, settings.EmbeddingDimension)
+	imhistory.SetGlobalRecorder(imHistoryRecorder)
+	imHistoryService := service.NewIMHistoryService(activeStore)
+	imoutbound.GlobalStore().SetBase(settings.UploadDir)
+	larkbot.Global().SetOutboundBase(settings.UploadDir)
+	dingtalkbot.Global().SetOutboundBase(settings.UploadDir)
 
 	// RBAC Service
 	rbacSvc := service.NewRBACService(activeStore)
@@ -226,6 +258,7 @@ func main() {
 	messageCtrl := controller.NewMessageController(messageService)
 	graphWorkflowCtrl := controller.NewGraphWorkflowController(graphWorkflowService)
 	chatCtrl := controller.NewChatController(chatService, jwtCfg, chatUserStore, settings.UploadDir, rbacSvc)
+	chatCtrl.SetIMHistoryService(imHistoryService)
 	scheduleCtrl := controller.NewScheduleController(scheduleService, jwtCfg, chatUserStore)
 	var auditUserLookup storage.UserStore
 	if gormDB != nil {
@@ -254,6 +287,18 @@ func main() {
 		})
 	}
 
+	// Knowledge base controller (gate on real Postgres + feature flag).
+	var kbCtrl *controller.KnowledgeBaseController
+	if kbSvc != nil {
+		kbCtrl = controller.NewKnowledgeBaseController(kbSvc, gormDB.UserStore, jwtCfg, settings.UploadDir)
+	}
+
+	// Model config controller
+	var modelCtrl *controller.ModelController
+	if modelSvc != nil {
+		modelCtrl = controller.NewModelController(modelSvc, jwtCfg, chatUserStore)
+	}
+
 	h := server.New(
 		server.WithHostPorts(fmt.Sprintf(":%d", settings.ServerPort)),
 	)
@@ -268,7 +313,7 @@ func main() {
 	corsCfg.AllowAllOrigins = true
 	corsCfg.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 	corsCfg.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-Requested-With"}
-	corsCfg.ExposeHeaders = []string{"Content-Length", "Content-Type"}
+	corsCfg.ExposeHeaders = []string{"Content-Length", "Content-Type", "X-Session-ID", "X-Duration-MS"}
 	corsCfg.MaxAge = 86400 * time.Second
 	h.Use(cors.New(corsCfg))
 
@@ -299,6 +344,12 @@ func main() {
 	if usageCtrl != nil {
 		usageCtrl.RegisterRoutes(h)
 	}
+	if kbCtrl != nil {
+		kbCtrl.RegisterRoutes(h)
+	}
+	if modelCtrl != nil {
+		modelCtrl.RegisterRoutes(h)
+	}
 	versionCtrl.RegisterRoutes(h)
 
 	// Lark bot controller
@@ -309,12 +360,19 @@ func main() {
 	telegramBotCtrl := controller.NewTelegramBotController(agentService)
 	telegramBotCtrl.RegisterRoutes(h)
 
-	h.GET("/swagger/*filepath", swagger.WrapHandler(swaggerFiles.Handler))
+	// DingTalk bot controller
+	dingtalkBotCtrl := controller.NewDingtalkBotController(agentService)
+	dingtalkBotCtrl.RegisterRoutes(h)
+
+	imBotHistoryCtrl := controller.NewIMBotHistoryController(imHistoryService, jwtCfg, chatUserStore)
+	imBotHistoryCtrl.RegisterRoutes(h)
+
+	h.GET("/api/swagger/*filepath", swagger.WrapHandler(swaggerFiles.Handler))
 
 	webui.Register(h)
 
 	logger.Info("starting server", "addr", fmt.Sprintf(":%d", settings.ServerPort))
-	logger.Info("swagger UI", "url", fmt.Sprintf("http://localhost:%d/swagger/index.html", settings.ServerPort))
+	logger.Info("swagger UI", "url", fmt.Sprintf("http://localhost:%d/api/swagger/index.html", settings.ServerPort))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -324,6 +382,9 @@ func main() {
 		logger.Info("shutting down server")
 		scheduleService.StopScheduler()
 		imManager.StopAll()
+		if kbSvc != nil {
+			kbSvc.Wait()
+		}
 		h.Shutdown(ctx)
 	}()
 

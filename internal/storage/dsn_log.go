@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"github.com/fisk086/sya/internal/logger"
+	"github.com/fisk086/aiops/internal/logger"
 	"github.com/jackc/pgx/v5"
 )
 

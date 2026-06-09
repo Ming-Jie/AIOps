@@ -10,6 +10,7 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfCode') }}</div>
+      <div class="text-caption text-grey-7 q-mb-xs">{{ t('wfCodeHint') }}</div>
       <q-input :model-value="strField('code')" outlined dense type="textarea" rows="10" :placeholder="t('wfCodePh')" class="config-input" @update:model-value="patchConfig('code', $event)" />
     </div>
   </div>

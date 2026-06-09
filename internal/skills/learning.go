@@ -8,7 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 	einoschema "github.com/cloudwego/eino/schema"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 const toolLearning = "builtin_learning"

@@ -3,7 +3,7 @@ package authprovider
 import (
 	"context"
 
-	"github.com/fisk086/sya/internal/auth"
+	"github.com/fisk086/aiops/internal/auth"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )

@@ -23,7 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const LONG_PLAN_THRESHOLD = 8
-/** 与 taskmate-desktop PlanExecuteTaskPanel 一致：步骤数较多时每步可折叠 */
+/** 与 aiops-desktop PlanExecuteTaskPanel 一致：步骤数较多时每步可折叠 */
 const STEP_ACCORDION_THRESHOLD = 5
 
 /** 长计划默认折叠；短计划默认展开。用户点击标题可切换（与 tasks 数量无关）。 */

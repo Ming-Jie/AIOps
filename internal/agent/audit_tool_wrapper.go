@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	agentSchema "github.com/fisk086/sya/internal/schema"
+	agentSchema "github.com/fisk086/aiops/internal/schema"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )

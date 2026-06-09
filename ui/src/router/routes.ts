@@ -20,13 +20,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('pages/DashboardPage.vue'),
         meta: { requireAuth: true, title: '仪表盘' }
       },
-      /** 群聊：/chat/group/<session_id>；单聊：/chat/<agent public_id | 数字 id | 单聊 session uuid> */
-      {
-        path: '/chat/group/:sessionId',
-        name: 'chat-group',
-        component: () => import('pages/ChatPage.vue'),
-        meta: { requireAuth: true, title: '对话' }
-      },
       {
         path: '/chat/:agentId?',
         name: 'chat',
@@ -52,6 +45,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requireAuth: true, requiresAdmin: true, title: 'MCP' }
       },
       {
+        path: '/models',
+        name: 'models',
+        component: () => import('pages/ModelsPage.vue'),
+        meta: { requireAuth: true, requiresAdmin: true, title: '模型配置' }
+      },
+      {
         path: '/workflows',
         name: 'workflows',
         component: () => import('pages/WorkflowsPage.vue'),
@@ -68,6 +67,18 @@ const routes: RouteRecordRaw[] = [
         name: 'channels',
         component: () => import('pages/ChannelsPage.vue'),
         meta: { requireAuth: true, title: '消息通知' }
+      },
+      {
+        path: '/knowledge',
+        name: 'knowledge',
+        component: () => import('pages/KnowledgeBasePage.vue'),
+        meta: { requireAuth: true, title: '知识库' }
+      },
+      {
+        path: '/knowledge/:id',
+        name: 'knowledge-detail',
+        component: () => import('pages/KnowledgeBaseDetailPage.vue'),
+        meta: { requireAuth: true, title: '知识库详情' }
       },
       {
         path: '/larkbots',

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/model"
+	"github.com/fisk086/aiops/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -25,6 +25,8 @@ type UserStore interface {
 	GetUserByID(id int64) (*model.User, error)
 	GetUserByUsername(username string) (*model.User, error)
 	GetUserByEmail(email string) (*model.User, error)
+	// GetUserByLoginName resolves username or email (case-insensitive fallback).
+	GetUserByLoginName(name string) (*model.User, error)
 	GetUserByLarkOpenID(openID string) (*model.User, error)
 	CreateUser(user *model.User) error
 	UpdateUser(user *model.User) error
@@ -51,6 +53,29 @@ func (s *GORMUserStore) GetUserByUsername(username string) (*model.User, error) 
 
 func (s *GORMUserStore) GetUserByEmail(email string) (*model.User, error) {
 	return firstUserByWhere(s.db, "email = ?", email)
+}
+
+func (s *GORMUserStore) GetUserByLoginName(name string) (*model.User, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	if u, err := s.GetUserByUsername(name); err == nil {
+		return u, nil
+	}
+	if u, err := s.GetUserByEmail(name); err == nil {
+		return u, nil
+	}
+	lower := strings.ToLower(name)
+	var users []model.User
+	err := s.db.Where("LOWER(username) = ? OR LOWER(email) = ?", lower, lower).Limit(1).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &users[0], nil
 }
 
 func (s *GORMUserStore) GetUserByLarkOpenID(openID string) (*model.User, error) {

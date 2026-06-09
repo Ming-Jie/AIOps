@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // skillSelectCols uses COALESCE on nullable TEXT columns so pgx can scan into Go string (NULL would otherwise fail the whole list).

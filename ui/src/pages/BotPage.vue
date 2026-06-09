@@ -35,7 +35,10 @@
     >
       <template #body-cell-bot_type="props">
         <q-td :props="props">
-          <q-badge :color="props.row.bot_type === 'lark' ? 'blue' : 'primary'" :label="props.row.bot_type === 'lark' ? '飞书' : 'Telegram'" />
+          <q-badge
+            :color="props.row.bot_type === 'lark' ? 'blue' : props.row.bot_type === 'dingtalk' ? 'orange' : 'primary'"
+            :label="props.row.bot_type === 'lark' ? '飞书' : props.row.bot_type === 'dingtalk' ? '钉钉' : 'Telegram'"
+          />
         </q-td>
       </template>
       <template #body-cell-app_id="props">
@@ -79,6 +82,15 @@
           <q-btn
             dense
             flat
+            color="primary"
+            icon="forum"
+            :label="t('botHistory')"
+            class="q-mr-xs"
+            @click="openHistory(props.row)"
+          />
+          <q-btn
+            dense
+            flat
             color="negative"
             :label="t('botUnregister')"
             :loading="rowBusyAgentId === props.row.agent_id"
@@ -98,10 +110,18 @@
         </div>
       </template>
     </q-table>
+
+    <BotHistoryDialog
+      v-model:open="historyDialogOpen"
+      :agent-id="historyAgentId"
+      :agent-name="historyAgentName"
+      :default-channel="historyChannel"
+    />
   </q-page>
 </template>
 
 <script setup lang="ts">
+import BotHistoryDialog from 'components/BotHistoryDialog.vue'
 import { useBotPage } from 'pages/useBotPage'
 
 defineOptions({ name: 'BotPage' })
@@ -118,6 +138,11 @@ const {
   startRowAgent,
   stopRowAgent,
   startAll,
-  stopAll
+  stopAll,
+  historyDialogOpen,
+  historyAgentId,
+  historyAgentName,
+  historyChannel,
+  openHistory
 } = useBotPage()
 </script>

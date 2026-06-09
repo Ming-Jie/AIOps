@@ -4,13 +4,14 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/service"
-	"github.com/fisk086/sya/internal/telegrambot"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/telegrambot"
 )
 
 type TelegramBotStatus struct {
@@ -36,7 +37,7 @@ func (c *TelegramBotController) RegisterRoutes(r *server.Hertz) {
 	r.POST("/api/v1/telegrambots/:agentId/ws/start", c.StartAgentWS)
 	r.POST("/api/v1/telegrambots/:agentId/ws/stop", c.StopAgentWS)
 	r.DELETE("/api/v1/telegrambots/:agentId", c.UnregisterForAgent)
-	r.POST("/api/v1/telegrambots/webhook", c.Webhook)
+	r.POST("/api/v1/telegrambots/webhook/:agentId", c.Webhook)
 }
 
 func (c *TelegramBotController) ListBots(ctx context.Context, hc *app.RequestContext) {
@@ -199,6 +200,15 @@ func (c *TelegramBotController) StartAgentWS(ctx context.Context, hc *app.Reques
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("telegram token is empty"))
 		return
 	}
+	if err := ctrl.SetTelegramIMWsEnabled(agentID, true); err != nil {
+		hc.JSON(http.StatusInternalServerError, schema.ErrorResponse(err.Error()))
+		return
+	}
+	agent, err = ctrl.GetAgentByID(agentID)
+	if err != nil || agent == nil {
+		hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
+		return
+	}
 	ctrl.RegisterTelegramBotForAgent(agent)
 	client := telegrambot.Global()
 	if client.GetBotConfig(token) == nil {
@@ -241,6 +251,9 @@ func (c *TelegramBotController) StopAgentWS(ctx context.Context, hc *app.Request
 		return
 	}
 	telegrambot.Global().StopBot(token)
+	if err := ctrl.SetTelegramIMWsEnabled(agentID, false); err != nil {
+		logger.Warn("telegrambot: persist ws_enabled=false failed", "agent_id", agentID, "err", err)
+	}
 	hc.JSON(http.StatusOK, schema.SuccessResponse(map[string]any{
 		"stopped":      true,
 		"token_prefix": token[:8],
@@ -248,6 +261,32 @@ func (c *TelegramBotController) StopAgentWS(ctx context.Context, hc *app.Request
 }
 
 func (c *TelegramBotController) Webhook(ctx context.Context, hc *app.RequestContext) {
+	agentID := parseInt64Param(hc, "agentId")
+	if agentID == 0 {
+		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("invalid agent id"))
+		return
+	}
+
+	ctrl := GetAgentController()
+	if ctrl == nil {
+		hc.JSON(http.StatusInternalServerError, schema.ErrorResponse("agent controller not available"))
+		return
+	}
+	agent, err := ctrl.GetAgentByID(agentID)
+	if err != nil || agent == nil {
+		hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
+		return
+	}
+	if agent.RuntimeProfile == nil || agent.RuntimeProfile.IMEnabled != "telegram" {
+		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("agent does not have telegram im enabled"))
+		return
+	}
+	token := strings.TrimSpace(agent.RuntimeProfile.IMConfig.TelegramToken)
+	if token == "" {
+		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("telegram token is empty"))
+		return
+	}
+
 	body := hc.Request.Body()
 	if body == nil {
 		logger.Error("telegrambot: failed to read request body", "err", "nil body")
@@ -256,7 +295,7 @@ func (c *TelegramBotController) Webhook(ctx context.Context, hc *app.RequestCont
 	}
 
 	client := telegrambot.Global()
-	if err := client.HandleUpdate(ctx, body); err != nil {
+	if err := client.HandleUpdate(ctx, token, body); err != nil {
 		logger.Warn("telegrambot: failed to handle update", "err", err)
 		hc.JSON(http.StatusOK, schema.SuccessResponse(map[string]any{"error": err.Error()}))
 		return

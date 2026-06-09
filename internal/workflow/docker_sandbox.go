@@ -8,9 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/fisk086/sya/internal/logger"
+	"github.com/fisk086/aiops/internal/logger"
 )
 
 type DockerResult struct {
@@ -27,8 +28,12 @@ func (s *DockerSandbox) Execute(ctx context.Context, language, code string, inpu
 		return "", result.Error
 	}
 
-	if result.Stderr != "" && result.ExitCode != 0 {
-		return result.Stdout, fmt.Errorf("%s", result.Stderr)
+	if result.ExitCode != 0 {
+		msg := strings.TrimSpace(result.Stderr)
+		if msg == "" {
+			msg = "non-zero exit code"
+		}
+		return result.Stdout, fmt.Errorf("%s", msg)
 	}
 
 	return result.Stdout, nil
@@ -41,7 +46,7 @@ func (s *DockerSandbox) executeWithDocker(ctx context.Context, language, code st
 	}
 
 	imageName := s.getImage(language)
-	containerName := fmt.Sprintf("taskmate-sandbox-%d", time.Now().UnixNano())
+	containerName := fmt.Sprintf("aiops-sandbox-%d", time.Now().UnixNano())
 	logger.Info("docker sandbox: starting", "language", language, "image", imageName, "container", containerName)
 
 	defer func() {
@@ -52,7 +57,7 @@ func (s *DockerSandbox) executeWithDocker(ctx context.Context, language, code st
 	inputJSON := mapToJSON(input)
 	runnerCode := generateRunnerCode(language, code, inputJSON)
 
-	tempDir, err := os.MkdirTemp("", "taskmate-sandbox-")
+	tempDir, err := os.MkdirTemp("", "aiops-sandbox-")
 	if err != nil {
 		return &DockerResult{Error: fmt.Errorf("failed to create temp dir: %w", err)}
 	}
@@ -120,14 +125,27 @@ func (s *DockerSandbox) executeWithDocker(ctx context.Context, language, code st
 		logsCmd.Run()
 	}
 
-	logger.Info("docker sandbox: execution finished", "container", containerName,
-		"stdout_bytes", stdout.Len(), "stderr_bytes", stderr.Len())
+	exitCode := 0
+	if err != nil {
+		exitCode = 1
+	}
 
-	return &DockerResult{
+	logger.Info("docker sandbox: execution finished", "container", containerName,
+		"stdout_bytes", stdout.Len(), "stderr_bytes", stderr.Len(), "exit_code", exitCode)
+
+	result := &DockerResult{
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
-		ExitCode: 0,
+		ExitCode: exitCode,
 	}
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		result.Error = fmt.Errorf("python execution failed: %s", msg)
+	}
+	return result
 }
 
 func checkDocker() error {
@@ -171,14 +189,26 @@ func generateRunnerCode(language, code, inputJSON string) string {
 import json
 import sys
 
-input_data = json.loads('''%s''')
+input_data = %s
+
+_mapping = input_data.get("mapping")
+if isinstance(_mapping, dict):
+    for _k, _v in _mapping.items():
+        if isinstance(_k, str) and _k.isidentifier():
+            globals()[_k] = _v
 
 # User code starts here
 %s
 `, inputJSON, code)
 	case "javascript":
 		return fmt.Sprintf(`
-const input = %s;
+const input_data = %s;
+const mapping = input_data.mapping;
+if (mapping && typeof mapping === "object") {
+  for (const [k, v] of Object.entries(mapping)) {
+    globalThis[k] = v;
+  }
+}
 
 %s
 `, inputJSON, code)

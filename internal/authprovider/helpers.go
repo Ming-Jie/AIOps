@@ -49,5 +49,5 @@ func clearOAuthStateCookie(c *app.RequestContext, name, domain string) {
 }
 
 func oauthStateCookieName(providerID string) string {
-	return "sya_oauth_state_" + providerID
+	return "aiops_oauth_state_" + providerID
 }

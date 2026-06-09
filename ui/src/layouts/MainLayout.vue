@@ -79,6 +79,12 @@
               </q-item-section>
               <q-item-section>{{ t('schedules') }}</q-item-section>
             </q-item>
+            <q-item clickable v-ripple :to="{ name: 'knowledge' }">
+              <q-item-section avatar>
+                <q-icon name="menu_book" />
+              </q-item-section>
+              <q-item-section>{{ t('knowledge') }}</q-item-section>
+            </q-item>
 
             <template v-if="meLoaded && isAdmin">
               <q-separator class="q-my-sm" />
@@ -99,6 +105,12 @@
                   <q-icon name="hub" />
                 </q-item-section>
                 <q-item-section>{{ t('mcp') }}</q-item-section>
+              </q-item>
+              <q-item clickable v-ripple :to="{ name: 'models' }">
+                <q-item-section avatar>
+                  <q-icon name="model_training" />
+                </q-item-section>
+                <q-item-section>{{ t('models') }}</q-item-section>
               </q-item>
               <q-item clickable v-ripple :to="{ name: 'bots' }">
                 <q-item-section avatar>

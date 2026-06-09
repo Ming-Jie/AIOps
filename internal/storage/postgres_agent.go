@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fisk086/sya/internal/model"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/model"
+	"github.com/fisk086/aiops/internal/schema"
 	"github.com/jackc/pgx/v5"
 )
 
 func (s *PostgresStorage) ListAgents() ([]*schema.Agent, error) {
 	rows, err := s.pool.Query(context.Background(),
-		`SELECT a.id, a.public_id::text, a.name, a.description, a.category, a.is_builtin, a.is_active, a.created_at, a.updated_at, 
-			COALESCE(r.skill_ids, '{}'), COALESCE(r.mcp_config_ids, '{}')
+		`SELECT a.id, a.public_id::text, a.name, a.description, a.category, a.is_builtin, a.is_active, a.created_at, a.updated_at,
+			COALESCE(r.skill_ids, '{}'), COALESCE(r.mcp_config_ids, '{}'), COALESCE(r.kb_ids, '{}')
 		FROM agents a
 		LEFT JOIN agent_runtime r ON a.id = r.agent_id
 		ORDER BY a.id`)
@@ -29,11 +29,13 @@ func (s *PostgresStorage) ListAgents() ([]*schema.Agent, error) {
 		var a schema.Agent
 		var skillIDs []string
 		var mcpIDs []int64
-		if err := rows.Scan(&a.ID, &a.PublicID, &a.Name, &a.Desc, &a.Category, &a.IsBuiltin, &a.IsActive, &a.CreatedAt, &a.UpdatedAt, &skillIDs, &mcpIDs); err != nil {
+		var kbIDs []int64
+		if err := rows.Scan(&a.ID, &a.PublicID, &a.Name, &a.Desc, &a.Category, &a.IsBuiltin, &a.IsActive, &a.CreatedAt, &a.UpdatedAt, &skillIDs, &mcpIDs, &kbIDs); err != nil {
 			return nil, err
 		}
 		a.SkillIDs = skillIDs
 		a.MCPConfigIDs = mcpIDs
+		a.KBIDs = kbIDs
 		agents = append(agents, &a)
 	}
 	return agents, nil
@@ -53,10 +55,12 @@ func (s *PostgresStorage) GetAgent(id int64) (*schema.AgentWithRuntime, error) {
 	var rt model.AgentRuntime
 	var skillIDs []string
 	var mcpIDs []int64
+	var kbIDs []int64
+	var modelConfigID int64
 	var imConfigJSON []byte
 	err = s.pool.QueryRow(context.Background(),
-		`SELECT id, agent_id, source_agent, archetype, role, goal, backstory, system_prompt, llm_model, temperature, stream_enabled, memory_enabled, skill_ids, mcp_config_ids, execution_mode, max_iterations, plan_prompt, reflection_depth, approval_mode, approvers, im_enabled, im_config, created_at, updated_at FROM agent_runtime WHERE agent_id = $1`, id).
-		Scan(&rt.ID, &rt.AgentID, &rt.SourceAgent, &rt.Archetype, &rt.Role, &rt.Goal, &rt.Backstory, &rt.SystemPrompt, &rt.LlmModel, &rt.Temperature, &rt.StreamEnabled, &rt.MemoryEnabled, &skillIDs, &mcpIDs, &rt.ExecutionMode, &rt.MaxIterations, &rt.PlanPrompt, &rt.ReflectionDepth, &rt.ApprovalMode, &rt.Approvers, &rt.IMEnabled, &imConfigJSON, &rt.CreatedAt, &rt.UpdatedAt)
+		`SELECT id, agent_id, source_agent, archetype, role, goal, backstory, system_prompt, llm_model, temperature, stream_enabled, memory_enabled, skill_ids, mcp_config_ids, COALESCE(kb_ids, '{}'), COALESCE(model_config_id, 0), execution_mode, max_iterations, plan_prompt, reflection_depth, approval_mode, approvers, im_enabled, im_config, created_at, updated_at FROM agent_runtime WHERE agent_id = $1`, id).
+		Scan(&rt.ID, &rt.AgentID, &rt.SourceAgent, &rt.Archetype, &rt.Role, &rt.Goal, &rt.Backstory, &rt.SystemPrompt, &rt.LlmModel, &rt.Temperature, &rt.StreamEnabled, &rt.MemoryEnabled, &skillIDs, &mcpIDs, &kbIDs, &modelConfigID, &rt.ExecutionMode, &rt.MaxIterations, &rt.PlanPrompt, &rt.ReflectionDepth, &rt.ApprovalMode, &rt.Approvers, &rt.IMEnabled, &imConfigJSON, &rt.CreatedAt, &rt.UpdatedAt)
 	if err == nil {
 		var imConfig schema.IMConfig
 		if len(imConfigJSON) > 0 {
@@ -70,11 +74,13 @@ func (s *PostgresStorage) GetAgent(id int64) (*schema.AgentWithRuntime, error) {
 			Backstory:       rt.Backstory,
 			SystemPrompt:    rt.SystemPrompt,
 			LlmModel:        rt.LlmModel,
+			ModelConfigID:   modelConfigID,
 			Temperature:     rt.Temperature,
 			StreamEnabled:   rt.StreamEnabled,
 			MemoryEnabled:   rt.MemoryEnabled,
 			SkillIDs:        skillIDs,
 			MCPConfigIDs:    mcpIDs,
+			KBIDs:           kbIDs,
 			ExecutionMode:   rt.ExecutionMode,
 			MaxIterations:   rt.MaxIterations,
 			PlanPrompt:      rt.PlanPrompt,
@@ -126,8 +132,8 @@ func (s *PostgresStorage) CreateAgent(req *schema.CreateAgentRequest) (*schema.A
 			maxIter = 16
 		}
 		_, err = s.pool.Exec(context.Background(),
-			`INSERT INTO agent_runtime (agent_id, source_agent, archetype, role, goal, backstory, system_prompt, llm_model, temperature, stream_enabled, memory_enabled, skill_ids, mcp_config_ids, execution_mode, max_iterations, plan_prompt, reflection_depth, approval_mode, approvers, im_enabled, im_config) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
-			id, rp.SourceAgent, rp.Archetype, rp.Role, rp.Goal, rp.Backstory, rp.SystemPrompt, rp.LlmModel, rp.Temperature, rp.StreamEnabled, rp.MemoryEnabled, rp.SkillIDs, rp.MCPConfigIDs, rp.ExecutionMode, maxIter, rp.PlanPrompt, rp.ReflectionDepth, rp.ApprovalMode, rp.Approvers, rp.IMEnabled, rp.IMConfig)
+			`INSERT INTO agent_runtime (agent_id, source_agent, archetype, role, goal, backstory, system_prompt, llm_model, model_config_id, temperature, stream_enabled, memory_enabled, skill_ids, mcp_config_ids, kb_ids, execution_mode, max_iterations, plan_prompt, reflection_depth, approval_mode, approvers, im_enabled, im_config) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+			id, rp.SourceAgent, rp.Archetype, rp.Role, rp.Goal, rp.Backstory, rp.SystemPrompt, rp.LlmModel, rp.ModelConfigID, rp.Temperature, rp.StreamEnabled, rp.MemoryEnabled, rp.SkillIDs, rp.MCPConfigIDs, rp.KBIDs, rp.ExecutionMode, maxIter, rp.PlanPrompt, rp.ReflectionDepth, rp.ApprovalMode, rp.Approvers, rp.IMEnabled, rp.IMConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -159,8 +165,8 @@ func (s *PostgresStorage) UpdateAgent(id int64, req *schema.UpdateAgentRequest) 
 			imConfigJSON, _ = json.Marshal(rp.IMConfig)
 		}
 		_, err = s.pool.Exec(context.Background(),
-			`UPDATE agent_runtime SET source_agent = COALESCE(NULLIF($1, ''), source_agent), archetype = COALESCE(NULLIF($2, ''), archetype), role = COALESCE(NULLIF($3, ''), role), goal = COALESCE(NULLIF($4, ''), goal), backstory = COALESCE(NULLIF($5, ''), backstory), system_prompt = COALESCE(NULLIF($6, ''), system_prompt), llm_model = COALESCE(NULLIF($7, ''), llm_model), temperature = $8, stream_enabled = $9, memory_enabled = $10, skill_ids = $11, mcp_config_ids = $12, execution_mode = COALESCE(NULLIF($13, ''), execution_mode), max_iterations = $14, plan_prompt = COALESCE(NULLIF($15, ''), plan_prompt), reflection_depth = $16, approval_mode = COALESCE(NULLIF($17, ''), approval_mode), approvers = $18, im_enabled = COALESCE(NULLIF($19, ''), im_enabled), im_config = $20, updated_at = NOW() WHERE agent_id = $21`,
-			rp.SourceAgent, rp.Archetype, rp.Role, rp.Goal, rp.Backstory, rp.SystemPrompt, rp.LlmModel, rp.Temperature, rp.StreamEnabled, rp.MemoryEnabled, rp.SkillIDs, rp.MCPConfigIDs, rp.ExecutionMode, maxIter, rp.PlanPrompt, rp.ReflectionDepth, rp.ApprovalMode, rp.Approvers, rp.IMEnabled, imConfigJSON, id)
+			`UPDATE agent_runtime SET source_agent = COALESCE(NULLIF($1, ''), source_agent), archetype = COALESCE(NULLIF($2, ''), archetype), role = COALESCE(NULLIF($3, ''), role), goal = COALESCE(NULLIF($4, ''), goal), backstory = COALESCE(NULLIF($5, ''), backstory), system_prompt = COALESCE(NULLIF($6, ''), system_prompt), llm_model = COALESCE(NULLIF($7, ''), llm_model), model_config_id = $22, temperature = $8, stream_enabled = $9, memory_enabled = $10, skill_ids = $11, mcp_config_ids = $12, execution_mode = COALESCE(NULLIF($13, ''), execution_mode), max_iterations = $14, plan_prompt = COALESCE(NULLIF($15, ''), plan_prompt), reflection_depth = $16, approval_mode = COALESCE(NULLIF($17, ''), approval_mode), approvers = $18, im_enabled = COALESCE(NULLIF($19, ''), im_enabled), im_config = $20, kb_ids = $23, updated_at = NOW() WHERE agent_id = $21`,
+			rp.SourceAgent, rp.Archetype, rp.Role, rp.Goal, rp.Backstory, rp.SystemPrompt, rp.LlmModel, rp.Temperature, rp.StreamEnabled, rp.MemoryEnabled, rp.SkillIDs, rp.MCPConfigIDs, rp.ExecutionMode, maxIter, rp.PlanPrompt, rp.ReflectionDepth, rp.ApprovalMode, rp.Approvers, rp.IMEnabled, imConfigJSON, id, rp.ModelConfigID, rp.KBIDs)
 		if err != nil {
 			return nil, err
 		}

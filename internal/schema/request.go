@@ -71,39 +71,11 @@ type ChatImagePart struct {
 	Mime   string `json:"mime"`
 }
 
-// Provide at least one of message (trimmed non-empty) or image_base64. For vision/OCR, send image_base64 (raw base64, no data: prefix) and image_mime (e.g. image/png).
-// For multiple images, send image_parts (each with base64 + mime); legacy single image uses image_base64 + image_mime.
-// For file uploads, provide image_url or file_urls (uploaded via POST /chat/upload).
-// GroupID is for group chat; when set, Mentions specifies which agents should respond (via @).
-// If Mentions is empty, group streaming treats the turn as collaboration and invokes group members.
 type ChatRequest struct {
-	AgentID    int64  `json:"agent_id"`
-	WorkflowID int64  `json:"workflow_id,omitempty"`
-	GroupID    int64  `json:"group_id,omitempty"`
-	Message    string `json:"message"`
-	SessionID  string `json:"session_id,omitempty"`
-	// Mentions specifies agent IDs that should respond in group chat (extracted from @ mentions).
-	Mentions []int64 `json:"mentions,omitempty"`
-	// ClientType: send "desktop" for AgentSphere Tauri / Electron; anything else (omit or "web") is treated as web.
-	// Server normalizes with controller.NormalizeClientTypeFromUserAgent; runtime uses it only to choose desktop-only tool UX (e.g. client_tool_call). Multimodal and ADK paths are shared — see agent.Runtime.openChatStream.
-	ClientType  string          `json:"client_type,omitempty"`
-	ImageBase64 string          `json:"image_base64,omitempty"`
-	ImageMime   string          `json:"image_mime,omitempty"`
-	ImageParts  []ChatImagePart `json:"image_parts,omitempty"`
-	ImageURL    string          `json:"image_url,omitempty"`
-	// ImageURLs uploaded via POST /chat/upload (same order as intended image_parts). Server may load bytes from disk into ImageParts for the model when ImageParts is omitted (no client JSON base64).
-	ImageURLs []string `json:"image_urls,omitempty"`
-	FileURLs  []string `json:"file_urls,omitempty"`
-}
-
-// GroupChatStreamRequest is the body for POST /chat/groups/stream (SSE).
-// Use this for multi-agent group chat instead of POST /chat/stream.
-// Empty Mentions means the message is addressed to the whole group.
-type GroupChatStreamRequest struct {
-	GroupID     int64           `json:"group_id" validate:"required,min=1"`
+	AgentID     int64           `json:"agent_id"`
+	WorkflowID  int64           `json:"workflow_id,omitempty"`
 	Message     string          `json:"message"`
 	SessionID   string          `json:"session_id,omitempty"`
-	Mentions    []int64         `json:"mentions,omitempty"`
 	ClientType  string          `json:"client_type,omitempty"`
 	ImageBase64 string          `json:"image_base64,omitempty"`
 	ImageMime   string          `json:"image_mime,omitempty"`
@@ -113,42 +85,22 @@ type GroupChatStreamRequest struct {
 	FileURLs    []string        `json:"file_urls,omitempty"`
 }
 
-// ToChatRequest maps group stream payload to the internal ChatRequest shape (AgentID/WorkflowID unset).
-func (g *GroupChatStreamRequest) ToChatRequest() *ChatRequest {
-	if g == nil {
-		return nil
-	}
-	return &ChatRequest{
-		GroupID:     g.GroupID,
-		Message:     g.Message,
-		SessionID:   g.SessionID,
-		Mentions:    g.Mentions,
-		ClientType:  g.ClientType,
-		ImageBase64: g.ImageBase64,
-		ImageMime:   g.ImageMime,
-		ImageParts:  g.ImageParts,
-		ImageURL:    g.ImageURL,
-		ImageURLs:   g.ImageURLs,
-		FileURLs:    g.FileURLs,
-	}
-}
-
 // ChatSession is a persisted conversation scope (listable, queryable history).
 type ChatSession struct {
-	SessionID string `json:"session_id"`
-	AgentID   int64  `json:"agent_id"`
-	UserID    string `json:"user_id,omitempty"`
-	Title     string `json:"title,omitempty"`
-	// GroupID set for group-chat threads (URL uses ?session= to restore UI).
-	GroupID   int64     `json:"group_id,omitempty"`
+	SessionID string    `json:"session_id"`
+	AgentID   int64     `json:"agent_id"`
+	UserID    string    `json:"user_id,omitempty"`
+	Title     string    `json:"title,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// IM bot sessions (user_id im:lark:… / im:telegram:…)
+	IMChannel string `json:"im_channel,omitempty"`
+	IMUserID  string `json:"im_user_id,omitempty"`
 }
 
 // CreateChatSessionRequest body for POST /chat/sessions (user comes from JWT, not body).
 type CreateChatSessionRequest struct {
 	AgentID int64 `json:"agent_id" validate:"required,min=1"`
-	GroupID int64 `json:"group_id,omitempty"`
 }
 
 // UpdateChatSessionRequest body for PUT /chat/sessions/:session_id.
@@ -235,32 +187,4 @@ type ChatResponseWithToolCall struct {
 	WorkflowID     int64           `json:"workflow_id,omitempty"`
 	DurationMS     int64           `json:"duration_ms,omitempty"`
 	ClientToolCall *ClientToolCall `json:"client_tool_call,omitempty"`
-}
-
-// ChatGroup represents a group chat with multiple agents.
-type ChatGroup struct {
-	ID        int64         `json:"id"`
-	Name      string        `json:"name"`
-	Members   []AgentMember `json:"members"`
-	CreatedBy string        `json:"created_by,omitempty"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
-}
-
-// AgentMember represents an agent in a group.
-type AgentMember struct {
-	AgentID   int64  `json:"agent_id"`
-	AgentName string `json:"agent_name,omitempty"`
-}
-
-// CreateGroupRequest body for POST /chat/groups.
-type CreateGroupRequest struct {
-	Name     string  `json:"name" validate:"required,min=1,max=100"`
-	AgentIDs []int64 `json:"agent_ids" validate:"required,min=1"`
-}
-
-// UpdateGroupRequest body for PUT /chat/groups/:id.
-type UpdateGroupRequest struct {
-	Name     *string `json:"name,omitempty"`
-	AgentIDs []int64 `json:"agent_ids,omitempty"`
 }

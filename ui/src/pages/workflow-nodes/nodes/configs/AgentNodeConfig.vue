@@ -22,7 +22,13 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfPromptTemplate') }}</div>
-      <q-input :model-value="strField('prompt_template')" outlined dense type="textarea" rows="6" class="config-input" @update:model-value="patchConfig('prompt_template', $event)" />
+      <div class="text-caption text-grey-7 q-mb-xs">{{ t('wfPromptVarHint') }}</div>
+      <WorkflowVariableField
+        :model-value="strField('prompt_template')"
+        :rows="6"
+        :placeholder="t('wfPromptTemplatePh')"
+        @update:model-value="patchConfig('prompt_template', $event)"
+      />
     </div>
     <q-separator class="q-my-md" />
     <div class="config-group">
@@ -58,6 +64,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
 import { useAgentNodeAgentOptions, useAgentNodeForm } from './useAgentNodeConfig'
 
 const props = defineProps<{

@@ -14,14 +14,14 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	einoschema "github.com/cloudwego/eino/schema"
-	"github.com/fisk086/sya/internal/agent"
-	"github.com/fisk086/sya/internal/chatfile"
-	"github.com/fisk086/sya/internal/chathistory"
-	"github.com/fisk086/sya/internal/embedding"
-	"github.com/fisk086/sya/internal/logger"
-	"github.com/fisk086/sya/internal/memory"
-	"github.com/fisk086/sya/internal/schema"
-	"github.com/fisk086/sya/internal/storage"
+	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/chatfile"
+	"github.com/fisk086/aiops/internal/chathistory"
+	"github.com/fisk086/aiops/internal/embedding"
+	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/memory"
+	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 type ChatService struct {
@@ -30,22 +30,18 @@ type ChatService struct {
 	memory    memory.Provider
 	embed     *embedding.Service
 	workflows *WorkflowService
-	vectorDim int // embedding dimension for agent_memory (zero-vector fallback when memory provider is nil)
+	kb        *KnowledgeBaseService // optional; nil when knowledge base feature disabled
+	vectorDim int                   // embedding dimension for agent_memory (zero-vector fallback when memory provider is nil)
 	wg        sync.WaitGroup
-
-	// groupChatHandler: wired in chat_service_group.go (initGroupChatHandler); used for multiplex group SSE.
-	groupChatHandler *agent.GroupChatHandler
 }
 
 // NewChatService wires chat; mem may be nil (no long-term memory). Use pgvector.New via factory in main when configured.
 // vectorDim must match DB embedding column size (e.g. EMBEDDING_DIMENSION); used to persist chat turns without an embedding API via zero vectors.
-func NewChatService(runtime *agent.Runtime, store storage.Storage, mem memory.Provider, embed *embedding.Service, workflows *WorkflowService, vectorDim int) *ChatService {
+func NewChatService(runtime *agent.Runtime, store storage.Storage, mem memory.Provider, embed *embedding.Service, workflows *WorkflowService, kb *KnowledgeBaseService, vectorDim int) *ChatService {
 	if vectorDim <= 0 {
 		vectorDim = 1536
 	}
-	svc := &ChatService{runtime: runtime, store: store, memory: mem, embed: embed, workflows: workflows, vectorDim: vectorDim}
-	initGroupChatHandler(svc, runtime)
-	return svc
+	return &ChatService{runtime: runtime, store: store, memory: mem, embed: embed, workflows: workflows, kb: kb, vectorDim: vectorDim}
 }
 
 func (s *ChatService) GetAgent(ctx context.Context, agentID int64) (*schema.Agent, error) {
@@ -339,10 +335,32 @@ func attachmentExtraFromRequest(req *schema.ChatRequest) map[string]any {
 	return ex
 }
 
+func (s *ChatService) storeConversationTurn(ctx context.Context, agentID int64, userID, sessionID, role, content string, extra map[string]any, useEmbedding bool) {
+	content = strings.TrimSpace(content)
+	if content == "" || strings.TrimSpace(sessionID) == "" || s.store == nil {
+		return
+	}
+	zero := make([]float32, s.vectorDim)
+	if useEmbedding && s.memory != nil {
+		if err := s.memory.Record(ctx, memory.Turn{
+			AgentID: agentID, UserID: userID, SessionID: sessionID, Role: role, Content: content, Extra: extra,
+		}); err != nil {
+			logger.Warn("memory record failed, storing transcript without embedding",
+				"agent_id", agentID, "session_id", sessionID, "role", role, "err", err)
+			if err2 := s.store.StoreMemory(ctx, agentID, userID, sessionID, role, content, zero, extra); err2 != nil {
+				logger.Error("failed to store turn fallback", "agent_id", agentID, "session_id", sessionID, "err", err2)
+			}
+		}
+		return
+	}
+	if err := s.store.StoreMemory(ctx, agentID, userID, sessionID, role, content, zero, extra); err != nil {
+		logger.Error("failed to store turn", "agent_id", agentID, "session_id", sessionID, "role", role, "err", err)
+	}
+}
+
 // recordConversationAsync persists user + assistant turns to agent_memory for GET /chat/sessions/:id/messages.
-// Session transcript is always stored (zero embeddings) so the chat UI can reload history after refresh.
 // When memory_enabled is true and memory.Provider is set, uses Record() with embeddings for semantic recall.
-// assistantExtra is stored in agent_memory.extra for the assistant row (e.g. react_steps from SSE).
+// Falls back to zero-vector StoreMemory if embedding fails so session history still works.
 func (s *ChatService) recordConversationAsync(agentID int64, userID, sessionID, userMsg, assistantMsg string, userExtra map[string]any, assistantExtra map[string]any) {
 	if strings.TrimSpace(sessionID) == "" {
 		return
@@ -354,6 +372,7 @@ func (s *ChatService) recordConversationAsync(agentID int64, userID, sessionID, 
 	}
 
 	memoryEnabled := s.isMemoryEnabled(context.Background(), agentID)
+	useEmbedding := memoryEnabled && s.memory != nil
 
 	s.wg.Add(1)
 	go func() {
@@ -361,33 +380,11 @@ func (s *ChatService) recordConversationAsync(agentID int64, userID, sessionID, 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if memoryEnabled && s.memory != nil {
-			if userMsg != "" {
-				if err := s.memory.Record(ctx, memory.Turn{AgentID: agentID, UserID: userID, SessionID: sessionID, Role: "user", Content: userMsg, Extra: userExtra}); err != nil {
-					logger.Error("failed to record user memory", "agent_id", agentID, "session_id", sessionID, "err", err)
-				}
-			}
-			if assistantMsg != "" {
-				if err := s.memory.Record(ctx, memory.Turn{AgentID: agentID, UserID: userID, SessionID: sessionID, Role: "assistant", Content: assistantMsg, Extra: assistantExtra}); err != nil {
-					logger.Error("failed to record assistant memory", "agent_id", agentID, "session_id", sessionID, "err", err)
-				}
-			}
-			return
-		}
-
-		if s.store == nil {
-			return
-		}
-		zero := make([]float32, s.vectorDim)
 		if userMsg != "" {
-			if err := s.store.StoreMemory(ctx, agentID, userID, sessionID, "user", userMsg, zero, userExtra); err != nil {
-				logger.Error("failed to store user turn", "agent_id", agentID, "session_id", sessionID, "err", err)
-			}
+			s.storeConversationTurn(ctx, agentID, userID, sessionID, "user", userMsg, userExtra, useEmbedding)
 		}
 		if assistantMsg != "" {
-			if err := s.store.StoreMemory(ctx, agentID, userID, sessionID, "assistant", assistantMsg, zero, assistantExtra); err != nil {
-				logger.Error("failed to store assistant turn", "agent_id", agentID, "session_id", sessionID, "err", err)
-			}
+			s.storeConversationTurn(ctx, agentID, userID, sessionID, "assistant", assistantMsg, assistantExtra, useEmbedding)
 		}
 	}()
 }
@@ -418,13 +415,15 @@ func (s *ChatService) Chat(ctx context.Context, req *schema.ChatRequest, chatUse
 
 	memoryEnabled := s.isMemoryEnabled(ctx, req.AgentID)
 	var historyMsgs []*einoschema.Message
+	var memSupp string
 	if memoryEnabled {
 		historyMsgs = s.retrieveHistory(ctx, req.SessionID, 20)
+		memSupp = s.retrieveMemory(ctx, req.AgentID, req.SessionID, userTextForMemory(req))
 	}
+	memSupp = chatfile.PrependMemContext(req.Message, req.FileURLs, memSupp)
 
 	start := time.Now()
-	userProfile := chatfile.ChatAttachedHTTPHint(req.Message, req.FileURLs)
-	resp, err := s.runtime.ChatWithUserProfile(ctx, req.AgentID, req.Message, req.ImageBase64, req.ImageMime, userProfile, req.SessionID, chatUserID, historyMsgs)
+	resp, err := s.runtime.ChatWithMemoryContext(ctx, req.AgentID, req.Message, req.ImageBase64, req.ImageMime, memSupp, req.SessionID, chatUserID, historyMsgs)
 	elapsed := time.Since(start).Milliseconds()
 	if err != nil {
 		return nil, err
@@ -446,7 +445,8 @@ func (s *ChatService) chatSequential(ctx context.Context, req *schema.ChatReques
 		return nil, fmt.Errorf("workflow has no steps")
 	}
 	memAgentID := wf.StepAgentIDs[0]
-	memSupp := chatfile.PrependMemContext(req.Message, req.FileURLs, s.retrieveMemory(ctx, memAgentID, req.SessionID, userTextForMemory(req)))
+	memContext := s.retrieveMemory(ctx, memAgentID, req.SessionID, userTextForMemory(req))
+	memSupp := chatfile.PrependMemContext(req.Message, req.FileURLs, memContext)
 
 	memoryEnabled := s.isMemoryEnabled(ctx, memAgentID)
 	var historyMsgs []*einoschema.Message
@@ -493,9 +493,6 @@ func (s *ChatService) ChatStream(ctx context.Context, req *schema.ChatRequest, c
 	if req.WorkflowID > 0 {
 		return nil, fmt.Errorf("workflow chat does not support POST /chat/stream yet; use POST /chat")
 	}
-	if isGroupChatStreamRequest(req) {
-		return s.GroupChatStream(ctx, req, chatUserID)
-	}
 	if err := validateChatTarget(req); err != nil {
 		return nil, err
 	}
@@ -520,8 +517,10 @@ func (s *ChatService) ChatStream(ctx context.Context, req *schema.ChatRequest, c
 
 	memoryEnabled := s.isMemoryEnabled(ctx, req.AgentID)
 	var historyMsgs []*einoschema.Message
+	var memSupp string
 	if memoryEnabled {
 		historyMsgs = s.retrieveHistory(ctx, req.SessionID, 20)
+		memSupp = s.retrieveMemory(ctx, req.AgentID, req.SessionID, userTextForMemory(req))
 	}
 
 	var stopCh <-chan struct{}
@@ -530,8 +529,8 @@ func (s *ChatService) ChatStream(ctx context.Context, req *schema.ChatRequest, c
 	}
 
 	parts := visionPartsFromRequest(req)
-	userProfile := chatfile.ChatAttachedHTTPHint(req.Message, req.FileURLs)
-	r, err := s.runtime.ChatStreamWithUserProfile(ctx, req.AgentID, req.Message, parts, userProfile, historyMsgs, stopCh, req.SessionID, chatUserID, req.ClientType)
+	memSupp = chatfile.PrependMemContext(req.Message, req.FileURLs, memSupp)
+	r, err := s.runtime.ChatStreamWithMemoryContext(ctx, req.AgentID, req.Message, parts, memSupp, historyMsgs, stopCh, req.SessionID, chatUserID, req.ClientType)
 	if err != nil {
 		return nil, err
 	}
@@ -741,6 +740,27 @@ func (s *ChatService) GetCapabilities(agentID int64) []schema.Capability {
 
 func (s *ChatService) CreateChatSession(ctx context.Context, agentID int64, userID string, groupID int64) (*schema.ChatSession, error) {
 	return s.store.CreateChatSession(ctx, agentID, userID, groupID)
+}
+
+// ResolveOrCreateChatSession returns an existing session_id when the client omitted one:
+// reuse the user's most recent session for this agent so multi-turn memory stays in one thread.
+// Creates a new session only when none exists yet.
+func (s *ChatService) ResolveOrCreateChatSession(ctx context.Context, agentID int64, userID string) (string, error) {
+	if s.store == nil || agentID < 1 || strings.TrimSpace(userID) == "" {
+		return "", nil
+	}
+	list, err := s.store.ListChatSessions(ctx, agentID, userID, 1, 0)
+	if err != nil {
+		return "", err
+	}
+	if len(list) > 0 && strings.TrimSpace(list[0].SessionID) != "" {
+		return list[0].SessionID, nil
+	}
+	sess, err := s.store.CreateChatSession(ctx, agentID, userID, 0)
+	if err != nil {
+		return "", err
+	}
+	return sess.SessionID, nil
 }
 
 func (s *ChatService) ListChatSessions(ctx context.Context, agentID int64, userID string, limit, offset int) ([]schema.ChatSession, error) {

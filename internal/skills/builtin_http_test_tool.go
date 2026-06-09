@@ -56,7 +56,7 @@ func execBuiltinHTTPTest(_ context.Context, in map[string]any) (string, error) {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("User-Agent", "sya-http-test/1.0")
+	req.Header.Set("User-Agent", "aiops-http-test/1.0")
 
 	headersJSON := strArg(in, "headers", "header")
 	if headersJSON != "" {

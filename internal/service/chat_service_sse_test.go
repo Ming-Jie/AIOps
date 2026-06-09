@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fisk086/sya/internal/agent"
+	"github.com/fisk086/aiops/internal/agent"
 )
 
 func TestParseSSEAssistantPayload_ReActSkipsInternalContent(t *testing.T) {

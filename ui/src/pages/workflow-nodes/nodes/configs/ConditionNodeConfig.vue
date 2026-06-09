@@ -6,7 +6,13 @@
     </div>
     <div class="config-group">
       <div class="config-label">{{ t('wfCondition') }}</div>
-      <q-input :model-value="strField('condition')" outlined dense class="config-input" @update:model-value="patchConfig('condition', $event)" />
+      <div class="text-caption text-grey-7 q-mb-xs">{{ t('wfConditionHint') }}</div>
+      <WorkflowVariableField
+        :model-value="strField('condition')"
+        :rows="2"
+        :placeholder="t('wfConditionPh')"
+        @update:model-value="patchConfig('condition', $event)"
+      />
     </div>
   </div>
 </template>
@@ -14,6 +20,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import WorkflowVariableField from 'components/WorkflowVariableField.vue'
 
 const props = defineProps<{
   nodeLabel: string

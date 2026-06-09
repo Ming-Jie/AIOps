@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	einoschema "github.com/cloudwego/eino/schema"
-	"github.com/fisk086/sya/internal/schema"
+	"github.com/fisk086/aiops/internal/schema"
 )
 
 // Placeholders for assistant rows persisted with empty content (e.g. client_tool handoff before final_answer).

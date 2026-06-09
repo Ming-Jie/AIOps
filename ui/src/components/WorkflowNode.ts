@@ -1,4 +1,5 @@
 import { computed } from 'vue'
+import { getNodeHeaderColor, getNodeIcon as getNodeIconFromLib } from 'src/lib/upstreamOutputs'
 
 export interface WorkflowNodeData {
   nodeType: string
@@ -13,35 +14,9 @@ export interface WorkflowNodeData {
 }
 
 export function useWorkflowNode (data: WorkflowNodeData, _selected: boolean) {
-  const headerColor = computed(() => {
-    const type = data.nodeType
-    const colors: Record<string, string> = {
-      input: '#52C41A',
-      output: '#1890FF',
-      agent: '#722ED1',
-      condition: '#FA8C16',
-      merge: '#607D8B',
-      llm: '#EB2F96',
-      tool: '#8C8C8C',
-      mcp: '#00a67d'
-    }
-    return colors[type] || '#999'
-  })
+  const headerColor = computed(() => getNodeHeaderColor(data.nodeType))
 
-  const nodeIcon = computed(() => {
-    const type = data.nodeType
-    const icons: Record<string, string> = {
-      agent: 'smart_toy',
-      input: 'input',
-      output: 'output',
-      condition: 'call_split',
-      merge: 'merge_type',
-      llm: 'psychology',
-      tool: 'build',
-      mcp: 'hub'
-    }
-    return icons[type] || 'circle'
-  })
+  const nodeIcon = computed(() => getNodeIconFromLib(data.nodeType))
 
   const config = computed(() => {
     const c = data.config

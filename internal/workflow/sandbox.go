@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fisk086/sya/internal/config"
-	"github.com/fisk086/sya/internal/logger"
+	"github.com/fisk086/aiops/internal/config"
+	"github.com/fisk086/aiops/internal/logger"
 )
 
 type SandboxType string
