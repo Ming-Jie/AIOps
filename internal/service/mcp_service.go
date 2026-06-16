@@ -39,8 +39,8 @@ func (s *MCPService) ListTools(configID int64) ([]schema.MCPServer, error) {
 	return s.store.ListMCPTools(configID)
 }
 
-func (s *MCPService) CreateConfig(req *schema.CreateMCPConfigRequest) (*schema.MCPConfig, error) {
-	cfg, err := s.store.CreateMCPConfig(req)
+func (s *MCPService) CreateConfig(req *schema.CreateMCPConfigRequest, createdBy int64) (*schema.MCPConfig, error) {
+	cfg, err := s.store.CreateMCPConfig(req, createdBy)
 	if err != nil {
 		return nil, err
 	}

@@ -14,6 +14,7 @@ import (
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/fisk086/aiops/internal/logger"
 	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/skills"
 )
 
 func (r *Runtime) runPlanAndExecute(
@@ -216,13 +217,22 @@ func (r *Runtime) runPlanAndExecuteStream(
 
 	go func() {
 		defer func() {
+			if rec := recover(); rec != nil {
+				logger.Error("plan_execute: stream panic", "recover", rec)
+			}
+		}()
+		defer func() {
 			bw.Flush()
 			pw.Close()
 		}()
 		defer r.flushUsageSession(ctx)
 
 		writeEvent := func(evt ReActEvent) {
-			data, _ := json.Marshal(evt)
+			data, err := json.Marshal(evt)
+			if err != nil {
+				logger.Error("plan_execute: writeEvent marshal failed", "err", err)
+				return
+			}
 			fmt.Fprintf(bw, "data: %s\n\n", data)
 			bw.Flush()
 		}
@@ -435,12 +445,18 @@ func (r *Runtime) runPlanAndExecuteStream(
 						continue
 					}
 
-					toolResult, err := foundTool.InvokableRun(ctx, tc.Function.Arguments)
+					toolRunCtx := skills.WithAttachmentCollector(ctx)
+					toolResult, err := foundTool.InvokableRun(toolRunCtx, tc.Function.Arguments)
 					if err != nil {
 						writeEvent(ReActEvent{Type: "error", Content: err.Error(), Step: i + 1, Tool: tc.Function.Name})
 						execStep.Error = fmt.Sprintf("tool %s: %v", tc.Function.Name, err)
 					} else {
-						writeEvent(ReActEvent{Type: "observation", Content: toolResult, Step: i + 1, Tool: tc.Function.Name})
+						attachments := skills.GetAttachments(toolRunCtx)
+						if len(attachments) == 0 {
+							attachments = nil
+						}
+						toolResult = skills.EnrichScreenshotToolResult(toolResult)
+						writeEvent(ReActEvent{Type: "observation", Content: toolResult, Step: i + 1, Tool: tc.Function.Name, Attachments: attachments})
 						execStep.Result += toolResult + "\n"
 					}
 				}
@@ -494,6 +510,333 @@ func (r *Runtime) runPlanAndExecuteStream(
 		}
 		fmt.Fprintf(bw, "data: [DONE]\n\n")
 		bw.Flush()
+	}()
+
+	return pr, nil
+}
+
+func (r *Runtime) ResumePlanExecuteStream(
+	ctx context.Context,
+	agent *schema.AgentWithRuntime,
+	systemPrompt string,
+	tools []tool.BaseTool,
+	callID string,
+	result string,
+	toolErr string,
+	sessionID string,
+	auditUserID string,
+	clientType string,
+) (io.ReadCloser, error) {
+	ctx = contextWithAgentID(ctx, agent.ID)
+	ctx = r.ensureUsageTracking(ctx, agent, auditUserID)
+
+	state, msgs, err := r.clientToolMgr.ResumeState(callID, result, toolErr)
+	if err != nil {
+		return nil, err
+	}
+
+	if !state.PlanMode {
+		return nil, fmt.Errorf("invalid state: not a plan-execute mode call")
+	}
+
+	logger.Info("plan-execute: resume stream",
+		"call_id", logger.CallIDForLog(callID),
+		"plan_index", state.PlanIndex,
+		"plan_steps", len(state.PlanSteps),
+		"msgs_len", len(msgs),
+	)
+
+	plan := state.PlanSteps
+	planText := state.PlanText
+	userInput := state.UserInput
+	currentIdx := state.PlanIndex
+	ov := skillExecOverrides(agent)
+	toolInfos := toolsToToolInfos(tools)
+
+	pr, pw := io.Pipe()
+	bw := bufio.NewWriterSize(pw, 4096)
+
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				logger.Error("plan_execute: resume stream panic", "recover", rec)
+			}
+		}()
+		defer func() {
+			bw.Flush()
+			pw.Close()
+		}()
+		defer r.flushUsageSession(ctx)
+
+		writeEvent := func(evt ReActEvent) {
+			data, err := json.Marshal(evt)
+			if err != nil {
+				logger.Error("plan_execute: writeEvent marshal failed", "err", err)
+				return
+			}
+			fmt.Fprintf(bw, "data: %s\n\n", data)
+			bw.Flush()
+		}
+
+		writeEvent(ReActEvent{Type: "observation", Content: fmt.Sprintf("计划已生成:\n%s", planText), Step: 0})
+
+		planItems := make([]PlanTaskItem, 0, len(plan))
+		for i, s := range plan {
+			planItems = append(planItems, PlanTaskItem{Index: i + 1, Task: s.Task})
+		}
+		writeEvent(ReActEvent{
+			Type:      "plan_tasks",
+			Content:   fmt.Sprintf("%d steps", len(plan)),
+			Step:      len(plan),
+			PlanTasks: planItems,
+		})
+
+		for j := 0; j < currentIdx && j < len(plan); j++ {
+			writeEvent(ReActEvent{
+				Type:           "plan_step",
+				Content:        plan[j].Task,
+				Step:           j + 1,
+				PlanStepStatus: "done",
+			})
+		}
+
+		planExec := &PlanResult{Plan: plan}
+		for j := 0; j < currentIdx && j < len(plan); j++ {
+			planExec.Steps = append(planExec.Steps, ExecStep{
+				PlanStep: plan[j],
+				Result:   "[Completed earlier in session; see prior observations.]",
+			})
+		}
+
+		for i := currentIdx; i < len(plan); i++ {
+			step := plan[i]
+
+			writeEvent(ReActEvent{
+				Type:           "plan_step",
+				Content:        step.Task,
+				Step:           i + 1,
+				PlanStepStatus: "running",
+			})
+			writeEvent(ReActEvent{Type: "thought", Content: fmt.Sprintf("执行步骤 %d/%d: %s", i+1, len(plan), step.Task), Step: i + 1})
+			if i == currentIdx {
+				if toolErr != "" {
+					writeEvent(ReActEvent{
+						Type:           "plan_step",
+						Content:        step.Task,
+						Step:           i + 1,
+						PlanStepStatus: "error",
+					})
+					writeEvent(ReActEvent{
+						Type:    "error",
+						Content: truncateRunesForPlanDetail(toolErr, 320),
+						Step:    i + 1,
+						Tool:    state.ToolName,
+					})
+				} else if preview := summarizeToolResultForPlanDetail(result); preview != "" {
+					writeEvent(ReActEvent{
+						Type:    "observation",
+						Content: preview,
+						Step:    i + 1,
+						Tool:    state.ToolName,
+					})
+				}
+			}
+
+			stepMessages := []*einoschema.Message{
+				{Role: einoschema.System, Content: systemPrompt},
+				{Role: einoschema.User, Content: userInput},
+				{Role: einoschema.Assistant, Content: fmt.Sprintf("Plan:\n%s", planText)},
+			}
+
+			for j := 0; j < i; j++ {
+				stepMessages = append(stepMessages, &einoschema.Message{
+					Role:    einoschema.Assistant,
+					Content: fmt.Sprintf("Step %d completed: %s", j+1, plan[j].Task),
+				})
+			}
+
+			if i == currentIdx {
+				stepMessages = append(stepMessages, msgs...)
+			} else {
+				currentTask := fmt.Sprintf("Execute step %d of %d: %s", i+1, len(plan), step.Task)
+				stepMessages = append(stepMessages, &einoschema.Message{
+					Role:    einoschema.User,
+					Content: currentTask,
+				})
+			}
+
+			resp, err := r.chatModel.Generate(ctx, stepMessages, model.WithTools(toolInfos))
+			execStep := ExecStep{PlanStep: step}
+			if err != nil {
+				logger.Error("runtime: plan step Generate failed", "error", err, "step", i+1)
+				execStep.Error = err.Error()
+				planExec.Steps = append(planExec.Steps, execStep)
+				writeEvent(ReActEvent{Type: "error", Content: fmt.Sprintf("step %d failed: %v", i+1, err), Step: i + 1})
+				writeEvent(ReActEvent{
+					Type:           "plan_step",
+					Content:        err.Error(),
+					Step:           i + 1,
+					PlanStepStatus: "error",
+				})
+				writeEvent(ReActEvent{
+					Type:    "final_answer",
+					Content: fmt.Sprintf("步骤 %d 执行失败: %v", i+1, err),
+					Step:    i + 1,
+				})
+				if err := streamStaticTextAsSSE(pw, fmt.Sprintf("步骤 %d 执行失败: %v", i+1, err)); err != nil {
+					return
+				}
+				fmt.Fprintf(pw, "data: [DONE]\n\n")
+				return
+			}
+
+			stepResult := ""
+			if i == currentIdx && toolErr == "" && strings.TrimSpace(result) != "" {
+				stepResult = result
+			}
+			if len(resp.ToolCalls) > 0 {
+				for _, tc := range resp.ToolCalls {
+					writeEvent(ReActEvent{Type: "action", Content: fmt.Sprintf("调用工具: %s", tc.Function.Name), Step: i + 1, Tool: tc.Function.Name, Arguments: tc.Function.Arguments})
+
+					if isClientTool(tools, tc.Function.Name, ov) {
+						execMode := getToolExecutionModeFromTools(tools, tc.Function.Name, ov)
+						if execMode == schema.ExecutionModeClient && clientType != "desktop" {
+							writeEvent(ReActEvent{Type: "error", Content: fmt.Sprintf("工具 %s 暂时不支持 Web 端，请在桌面客户端上使用", tc.Function.Name), Step: i + 1, Tool: tc.Function.Name})
+							writeEvent(ReActEvent{Type: "final_answer", Content: fmt.Sprintf("工具 %s 暂时不支持 Web 端，请在桌面客户端上使用", tc.Function.Name), Step: i + 1})
+							if err := streamStaticTextAsSSE(pw, fmt.Sprintf("工具 %s 暂时不支持 Web 端，请在桌面客户端上使用", tc.Function.Name)); err != nil {
+								return
+							}
+							fmt.Fprintf(pw, "data: [DONE]\n\n")
+							return
+						}
+						blocked, apprID, apprErr := r.GateClientToolApproval(agent, sessionID, auditUserID, tc.Function.Name, tc.Function.Arguments)
+						if apprErr != nil {
+							writeEvent(ReActEvent{Type: "error", Content: apprErr.Error(), Step: i + 1, Tool: tc.Function.Name})
+							writeEvent(ReActEvent{Type: "final_answer", Content: fmt.Sprintf("需要审批: %s", apprErr.Error()), Step: i + 1})
+							if err := streamStaticTextAsSSE(pw, fmt.Sprintf("需要审批: %s", apprErr.Error())); err != nil {
+								return
+							}
+							fmt.Fprintf(pw, "data: [DONE]\n\n")
+							return
+						}
+						tc.ID = ensureReActToolCallID(tc.ID, tc.Function.Name, i)
+						msgsForSave := append(append([]*einoschema.Message(nil), stepMessages...), &einoschema.Message{
+							Role:      einoschema.Assistant,
+							Content:   resp.Content,
+							ToolCalls: resp.ToolCalls,
+						})
+						msgCopy := make([]*einoschema.Message, len(msgsForSave))
+						copy(msgCopy, msgsForSave)
+						r.clientToolMgr.SaveState(&ClientToolCallState{
+							CallID:       tc.ID,
+							ToolName:     tc.Function.Name,
+							ToolArgs:     tc.Function.Arguments,
+							Messages:     msgCopy,
+							Iter:         i,
+							CreatedAt:    time.Now(),
+							ClientType:   clientType,
+							PlanMode:     true,
+							PlanText:     planText,
+							PlanIndex:    i,
+							PlanSteps:    plan,
+							UserInput:    userInput,
+							SystemPrompt: systemPrompt,
+						})
+						execModeVal := getToolExecutionModeFromTools(tools, tc.Function.Name, ov)
+						evt := ReActEvent{
+							Type:          "client_tool_call",
+							Content:       fmt.Sprintf("需要在客户端执行: %s", tc.Function.Name),
+							Step:          i + 1,
+							Tool:          tc.Function.Name,
+							Arguments:     tc.Function.Arguments,
+							CallID:        tc.ID,
+							Hint:          clientToolHint(tc.Function.Name),
+							RiskLevel:     r.resolveToolRiskLevel(tc.Function.Name),
+							ExecutionMode: execModeVal,
+						}
+						if blocked && apprID > 0 {
+							evt.ApprovalID = apprID
+						}
+						writeEvent(evt)
+						fmt.Fprintf(pw, "data: [DONE]\n\n")
+						return
+					}
+
+					foundTool := findInvokableTool(tools, tc.Function.Name)
+					if foundTool == nil {
+						writeEvent(ReActEvent{Type: "error", Content: fmt.Sprintf("tool not found: %s", tc.Function.Name), Step: i + 1, Tool: tc.Function.Name})
+						execStep.Error = fmt.Sprintf("tool not found: %s", tc.Function.Name)
+						continue
+					}
+
+					toolRunCtx := skills.WithAttachmentCollector(ctx)
+					toolResult, err := foundTool.InvokableRun(toolRunCtx, tc.Function.Arguments)
+					if err != nil {
+						writeEvent(ReActEvent{Type: "error", Content: err.Error(), Step: i + 1, Tool: tc.Function.Name})
+						execStep.Error = fmt.Sprintf("tool %s: %v", tc.Function.Name, err)
+					} else {
+						attachments := skills.GetAttachments(toolRunCtx)
+						if len(attachments) == 0 {
+							attachments = nil
+						}
+						toolResult = skills.EnrichScreenshotToolResult(toolResult)
+						writeEvent(ReActEvent{Type: "observation", Content: toolResult, Step: i + 1, Tool: tc.Function.Name, Attachments: attachments})
+						stepResult += toolResult + "\n"
+					}
+				}
+			}
+
+			if i == currentIdx && toolErr != "" {
+				execStep.Error = toolErr
+			}
+			if execStep.Error == "" && stepResult == "" {
+				stepResult = resp.Content
+			}
+			if execStep.Error == "" {
+				execStep.Result = stepResult
+			}
+			planExec.Steps = append(planExec.Steps, execStep)
+
+			writeEvent(ReActEvent{Type: "observation", Content: fmt.Sprintf("步骤 %d 完成", i+1), Step: i + 1})
+			writeEvent(ReActEvent{
+				Type:           "plan_step",
+				Content:        step.Task,
+				Step:           i + 1,
+				PlanStepStatus: "done",
+			})
+		}
+
+		writeEvent(ReActEvent{Type: "thought", Content: "正在综合所有步骤结果...", Step: len(plan) + 1})
+
+		synthPrompt := systemPrompt + planExecuteSystemSuffix
+		synthMessages := []*einoschema.Message{
+			{Role: einoschema.System, Content: synthPrompt},
+			{Role: einoschema.User, Content: userInput},
+			{Role: einoschema.Assistant, Content: fmt.Sprintf("Plan:\n%s\n\nExecution Results:\n%s", planText, planExec.formatSteps())},
+		}
+
+		finalResp, err := r.chatModel.Generate(ctx, synthMessages)
+		if err != nil {
+			logger.Error("runtime: plan synthesis Generate failed", "error", err)
+			writeEvent(ReActEvent{Type: "thought", Content: "综合步骤结果失败（步骤已全部完成）。"})
+			writeEvent(ReActEvent{
+				Type:    "final_answer",
+				Content: "任务执行完成，所有步骤已成功执行。",
+				Step:    len(plan) + 1,
+			})
+			if err := streamStaticTextAsSSE(pw, "任务执行完成，所有步骤已成功执行。"); err != nil {
+				return
+			}
+			fmt.Fprintf(pw, "data: [DONE]\n\n")
+			return
+		}
+
+		finalText := VisibleAssistantOrFallback(finalResp.Content, PlanExecuteSynthesisEmptyFallback)
+		writeEvent(ReActEvent{Type: "final_answer", Content: finalText, Step: len(plan) + 1})
+		if err := streamStaticTextAsSSE(pw, finalText); err != nil {
+			return
+		}
+		fmt.Fprintf(pw, "data: [DONE]\n\n")
 	}()
 
 	return pr, nil

@@ -58,7 +58,7 @@ export function useAgentsPage () {
 
   const runtimeProfile = reactive({
     llm_model: '',
-    model_config_id: 0 as number,
+    model_config_id: null as number | null,
     temperature: 0.7,
     system_prompt: '',
     stream_enabled: true,
@@ -80,11 +80,13 @@ export function useAgentsPage () {
       app_secret: '',
       allowed_users: [] as string[],
       lark_open_domain: '',
-      ws_enabled: true,
+      ws_enabled: false,
       telegram_token: '',
       telegram_chat_id: '',
       auto_reply: false,
-      notify_on_approval: true
+      notify_on_approval: true,
+      qq_app_id: '',
+      qq_bot_token: ''
     }
   })
 
@@ -96,6 +98,7 @@ export function useAgentsPage () {
   const selectedSkillIds = ref<string[]>([])
   const selectedMcpConfigIds = ref<number[]>([])
   const selectedKbIds = ref<number[]>([])
+  const selectedChatUserIds = ref<number[]>([])
 
   async function load () {
     loading.value = true
@@ -140,7 +143,7 @@ export function useAgentsPage () {
   function resetRuntimeProfileDefaults () {
     Object.assign(runtimeProfile, {
       llm_model: '',
-      model_config_id: 0,
+      model_config_id: null,
       temperature: 0.7,
       system_prompt: '',
       stream_enabled: true,
@@ -169,6 +172,7 @@ export function useAgentsPage () {
       selectedSkillIds.value = agent.skill_ids ?? []
       selectedMcpConfigIds.value = agent.mcp_config_ids ?? []
       selectedKbIds.value = [] // list payload has no kb_ids; filled by loadAgentRuntime below
+      selectedChatUserIds.value = agent.chat_user_ids ?? []
 
       resetRuntimeProfileDefaults()
       await loadAgentRuntime(agent.id)
@@ -184,6 +188,7 @@ export function useAgentsPage () {
       selectedSkillIds.value = []
       selectedMcpConfigIds.value = []
       selectedKbIds.value = []
+      selectedChatUserIds.value = []
 
       Object.assign(runtimeProfile, {
         source_agent: 'general_chat_agent',
@@ -195,7 +200,7 @@ export function useAgentsPage () {
         task_template: '',
         expected_output: '',
         llm_model: '',
-        model_config_id: 0,
+        model_config_id: null,
         temperature: 0.7,
         stream_enabled: true,
         memory_enabled: false,
@@ -216,7 +221,7 @@ export function useAgentsPage () {
           app_secret: '',
           allowed_users: [] as string[],
           lark_open_domain: '',
-          ws_enabled: true,
+          ws_enabled: false,
           telegram_token: '',
           telegram_chat_id: '',
           auto_reply: false,
@@ -236,7 +241,7 @@ export function useAgentsPage () {
         const imConfig = (rp.im_config as Record<string, unknown>) || {}
         Object.assign(runtimeProfile, {
           llm_model: rp.llm_model || '',
-          model_config_id: (rp.model_config_id as number) || 0,
+          model_config_id: (rp.model_config_id as number) || null,
           temperature: rp.temperature ?? 0.7,
           system_prompt: typeof rp.system_prompt === 'string' ? rp.system_prompt : '',
           stream_enabled: rp.stream_enabled ?? true,
@@ -268,7 +273,7 @@ export function useAgentsPage () {
               }
               return ''
             })(),
-            ws_enabled: imConfig.ws_enabled !== false,
+            ws_enabled: imConfig.ws_enabled === true,
             telegram_token: String(imConfig.telegram_token || ''),
             telegram_chat_id: String(imConfig.telegram_chat_id || ''),
             auto_reply: Boolean(imConfig.auto_reply),
@@ -294,7 +299,7 @@ export function useAgentsPage () {
       task_template: null,
       expected_output: null,
       llm_model: runtimeProfile.llm_model || null,
-      model_config_id: runtimeProfile.model_config_id > 0 ? runtimeProfile.model_config_id : null,
+      model_config_id: runtimeProfile.model_config_id != null && runtimeProfile.model_config_id > 0 ? runtimeProfile.model_config_id : null,
       temperature: runtimeProfile.temperature,
       stream_enabled: runtimeProfile.stream_enabled,
       memory_enabled: runtimeProfile.memory_enabled,
@@ -313,11 +318,12 @@ export function useAgentsPage () {
           return undefined
         }
         const c = { ...runtimeProfile.im_config }
-        if (runtimeProfile.im_enabled === 'lark' || runtimeProfile.im_enabled === 'telegram' || runtimeProfile.im_enabled === 'dingtalk') {
-          c.ws_enabled = true
-        } else {
-          c.ws_enabled = false
-        }
+        const imBot = runtimeProfile.im_enabled === 'lark' ||
+          runtimeProfile.im_enabled === 'telegram' ||
+          runtimeProfile.im_enabled === 'dingtalk' ||
+          runtimeProfile.im_enabled === 'qq'
+        // All IM bots default ws_enabled to false unless explicitly true (e.g. /bots manual start).
+        c.ws_enabled = imBot ? c.ws_enabled === true : false
         if (runtimeProfile.im_enabled !== 'telegram') {
           c.webhook_url = ''
           c.secret = ''
@@ -332,13 +338,15 @@ export function useAgentsPage () {
     }
 
     try {
+      const chatUserIds = selectedChatUserIds.value.length > 0 ? selectedChatUserIds.value : undefined
       if (isEdit.value) {
         const body: UpdateAgentRequest = {
           name: form.name,
           description: form.description,
           category: form.category,
           is_active: form.is_active,
-          runtime_profile: runtimeProfileData as any
+          runtime_profile: runtimeProfileData as any,
+          chat_user_ids: chatUserIds
         }
         await api.put(`/agents/${editId.value}`, body)
         $q.notify({ type: 'positive', message: t('updateOk') })
@@ -348,7 +356,8 @@ export function useAgentsPage () {
           description: form.description,
           category: form.category,
           is_active: form.is_active,
-          runtime_profile: runtimeProfileData as any
+          runtime_profile: runtimeProfileData as any,
+          chat_user_ids: chatUserIds
         }
         await api.post('/agents', body)
         $q.notify({ type: 'positive', message: t('createOk') })
@@ -490,6 +499,7 @@ export function useAgentsPage () {
     selectedSkillIds,
     selectedMcpConfigIds,
     selectedKbIds,
-    onSystemPromptPaste
+    onSystemPromptPaste,
+    selectedChatUserIds
   }
 }

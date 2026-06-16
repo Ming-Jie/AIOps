@@ -7,6 +7,7 @@ type CreateAgentRequest struct {
 	Description    string          `json:"description" validate:"required,min=1,max=1000"`
 	Category       string          `json:"category"`
 	RuntimeProfile *RuntimeProfile `json:"runtime_profile,omitempty"`
+	ChatUserIDs    []int64         `json:"chat_user_ids,omitempty"`
 }
 
 type UpdateAgentRequest struct {
@@ -14,6 +15,7 @@ type UpdateAgentRequest struct {
 	Description    string          `json:"description,omitempty"`
 	Category       string          `json:"category,omitempty"`
 	RuntimeProfile *RuntimeProfile `json:"runtime_profile,omitempty"`
+	ChatUserIDs    []int64         `json:"chat_user_ids,omitempty"`
 }
 
 type UpdateCapabilityTreeRequest struct {
@@ -96,6 +98,9 @@ type ChatSession struct {
 	// IM bot sessions (user_id im:lark:… / im:telegram:…)
 	IMChannel string `json:"im_channel,omitempty"`
 	IMUserID  string `json:"im_user_id,omitempty"`
+	// Session reset policy: none / idle / daily / both
+	ResetPolicy        string `json:"reset_policy,omitempty"`
+	IdleTimeoutMinutes int    `json:"idle_timeout_minutes,omitempty"`
 }
 
 // CreateChatSessionRequest body for POST /chat/sessions (user comes from JWT, not body).

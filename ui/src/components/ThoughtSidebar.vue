@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
+import { useQuasar } from 'quasar'
 import { useI18n } from 'vue-i18n'
+import ChatImagePreviewDialog from 'src/components/ChatImagePreviewDialog.vue'
+import { observationFileAttachments, observationImageSrc, observationTextBody } from 'src/utils/chatAttachments'
+import { isSafeImagePreviewSrc, resolveChatImageUrl } from 'src/pages/chat/chatMessageDisplay'
 import { riskLevelLabelZh } from 'src/utils/toolRisk'
 
 interface ThoughtStep {
@@ -19,6 +23,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const $q = useQuasar()
 
 /** 毫秒 → 秒文案：小于 100s 保留一位小数，整数去掉 .0 */
 function formatDurationSeconds (ms: number): string {
@@ -131,11 +136,30 @@ const getStepColor = (type: string) => {
   }
 }
 
-const getObservationBody = (step: ThoughtStep): string => {
-  const c = step.data?.content
-  if (typeof c === 'string') return c
-  if (c != null) return String(c)
-  return ''
+const MAX_OBSERVATION_CHARS = 8000
+
+const getObservationImageSrc = (step: ThoughtStep): string => {
+  const raw = observationImageSrc(step.data)
+  if (!raw) return ''
+  if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw
+  return resolveChatImageUrl(raw)
+}
+
+const getObservationTextBody = (step: ThoughtStep): string =>
+  observationTextBody(step.data, MAX_OBSERVATION_CHARS)
+
+const getObservationAttachments = (step: ThoughtStep) =>
+  observationFileAttachments(step.data)
+
+const openObservationImage = (src: string): void => {
+  if (!src || !isSafeImagePreviewSrc(src)) {
+    $q.notify({ type: 'warning', message: t('chatImagePreviewUnsafe') })
+    return
+  }
+  $q.dialog({
+    component: ChatImagePreviewDialog,
+    componentProps: { src }
+  })
 }
 
 /** ADK 用 name，ReAct 用 tool；侧栏统一取其一 */
@@ -311,6 +335,12 @@ const getFinalAnswerBody = (step: ThoughtStep, index: number): string => {
   return ''
 }
 
+function formatObsFileSize (bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
 const getProcessedContent = (step: ThoughtStep) => {
   const content = step.data?.content || step.data?.thought || ''
   if (typeof content !== 'string') return ''
@@ -344,12 +374,12 @@ const getProcessedContent = (step: ThoughtStep) => {
   >
     <div v-if="isOpen" class="flex column full-height overflow-hidden bg-grey-1">
       <!-- Header -->
-      <div class="q-pa-md bg-white border-bottom q-pb-sm">
+      <div class="q-pa-md bg-white border-bottom q-pb-sm" style="background: linear-gradient(135deg, #f8faff, #f0fdfa) !important;">
         <div class="row items-center justify-between">
           <div class="column">
             <div class="row items-center q-gutter-x-sm">
-              <q-icon name="psychology" color="primary" size="xs" />
-              <span class="text-subtitle2 text-weight-bold">思考过程 (Thinking)</span>
+              <q-icon name="psychology" color="ai-primary" size="xs" />
+              <span class="text-subtitle2 text-weight-bold" style="background: var(--ai-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">思考过程 (Thinking)</span>
             </div>
             <div
               v-if="durationMs != null && durationMs > 0 && hasToolCalls"
@@ -548,18 +578,54 @@ const getProcessedContent = (step: ThoughtStep) => {
                     <q-icon name="storage" size="xs" class="q-mr-xs" />
                     TOOL_RESULT
                   </div>
+                  <img
+                    v-if="getObservationImageSrc(step)"
+                    :src="getObservationImageSrc(step)"
+                    class="observation-image cursor-pointer"
+                    alt=""
+                    :title="t('chatImageZoom')"
+                    @click="openObservationImage(getObservationImageSrc(step))"
+                  >
                   <div
-                    v-if="getObservationBody(step)"
+                    v-if="getObservationTextBody(step)"
                     :class="[
                       'text-caption text-grey-7',
                       isStepExpanded(index) ? 'observation-body-expanded' : 'text-truncate-2'
                     ]"
                     style="white-space: pre-wrap; word-break: break-word;"
                   >
-                    {{ getObservationBody(step) }}
+                    {{ getObservationTextBody(step) }}
                   </div>
-                  <div v-else-if="props.status !== 'running'" class="text-caption text-grey-5 italic">
+                  <div
+                    v-else-if="!getObservationImageSrc(step) && props.status !== 'running'"
+                    class="text-caption text-grey-5 italic"
+                  >
                     （无返回正文）
+                  </div>
+                  <div v-if="getObservationAttachments(step).length > 0" class="q-mt-xs">
+                    <div class="row items-center q-gutter-x-xs q-mb-xs">
+                      <q-icon name="attach_file" size="12px" color="green-6" />
+                      <span class="text-caption text-weight-bold text-green-6">文件</span>
+                    </div>
+                    <div class="column q-gutter-y-xs">
+                      <template v-for="(att, ai) in getObservationAttachments(step)" :key="ai">
+                        <q-btn
+                          :label="att.filename + (att.size ? ` (${formatObsFileSize(att.size)})` : '')"
+                          :href="resolveChatImageUrl(att.inline || att.url || '')"
+                          :download="att.filename"
+                          dense
+                          no-caps
+                          size="sm"
+                          color="green-7"
+                          flat
+                          icon="download"
+                          rel="noopener"
+                          target="_blank"
+                          class="text-left"
+                          style="justify-content: flex-start;"
+                        />
+                      </template>
+                    </div>
                   </div>
                 </div>
 
@@ -653,6 +719,13 @@ const getProcessedContent = (step: ThoughtStep) => {
   overflow: hidden;
 }
 
+.observation-image {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
 .observation-body-expanded {
   max-height: 45vh;
   overflow-y: auto;
@@ -677,7 +750,7 @@ const getProcessedContent = (step: ThoughtStep) => {
 
 .bg-tech-grid {
   background-image:
-    radial-gradient(circle at 2px 2px, rgba(0, 122, 255, 0.02) 1px, transparent 0);
+    radial-gradient(circle at 2px 2px, rgba(99, 102, 241, 0.04) 1px, transparent 0);
   background-size: 16px 16px;
 }
 

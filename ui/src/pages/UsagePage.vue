@@ -15,7 +15,7 @@
         @update:model-value="loadUsage"
       />
       <q-btn flat round dense icon="refresh" @click="loadUsage" :loading="loading" class="q-ml-md">
-        <q-tooltip>刷新</q-tooltip>
+        <q-tooltip>{{ t('refresh') }}</q-tooltip>
       </q-btn>
     </div>
 
@@ -55,6 +55,7 @@
         row-key="id"
         flat
         bordered
+        class="q-table--soft radius-md"
         :pagination="{ rowsPerPage: 20 }"
       >
         <template #body-cell-date="props">
@@ -132,16 +133,16 @@ const loading = ref(false)
 const period = ref<'day' | 'week' | 'month'>('day')
 const stats = ref<UsageStat[]>([])
 
-const columns: { name: string; label: string; field: string | ((row: UsageStat) => unknown); align: 'left' | 'center' | 'right'; sortable?: boolean }[] = [
-  { name: 'date', label: '日期', field: 'date', align: 'left', sortable: true },
-  { name: 'user_name', label: '用户', field: 'user_name', align: 'left' },
-  { name: 'agent_name', label: '智能体', field: 'agent_name', align: 'left' },
-  { name: 'model', label: '模型', field: 'model', align: 'left' },
-  { name: 'prompt_tokens', label: 'Prompt Tokens', field: 'prompt_tokens', align: 'right' },
-  { name: 'completion_tokens', label: 'Completion Tokens', field: 'completion_tokens', align: 'right' },
-  { name: 'total_tokens', label: 'Total Tokens', field: 'total_tokens', align: 'right' },
-  { name: 'cost', label: '费用', field: 'cost', align: 'right' }
-]
+const columns = computed(() => [
+  { name: 'date', label: t('usageDate'), field: 'date', align: 'left' as const, sortable: true },
+  { name: 'user_name', label: t('usageUser'), field: 'user_name', align: 'left' as const },
+  { name: 'agent_name', label: t('usageAgent'), field: 'agent_name', align: 'left' as const },
+  { name: 'model', label: t('usageModel'), field: 'model', align: 'left' as const },
+  { name: 'prompt_tokens', label: t('usagePromptTokens'), field: 'prompt_tokens', align: 'right' as const },
+  { name: 'completion_tokens', label: t('usageCompletionTokens'), field: 'completion_tokens', align: 'right' as const },
+  { name: 'total_tokens', label: t('usageTotalTokens'), field: 'total_tokens', align: 'right' as const },
+  { name: 'cost', label: t('usageCost'), field: 'cost', align: 'right' as const }
+])
 
 const totalTokens = computed(() => {
   return stats.value.reduce((sum, s) => sum + s.total_tokens, 0)

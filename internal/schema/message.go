@@ -64,6 +64,7 @@ type ListMessagesRequest struct {
 type A2ACard struct {
 	ID           int64    `json:"id"`
 	AgentID      int64    `json:"agent_id"`
+	AgentName    string   `json:"agent_name,omitempty"`
 	Name         string   `json:"name"`
 	Description  string   `json:"description"`
 	URL          string   `json:"url"`
@@ -75,6 +76,15 @@ type A2ACard struct {
 
 type CreateA2ACardRequest struct {
 	AgentID      int64    `json:"agent_id" validate:"required"`
+	Name         string   `json:"name" validate:"required"`
+	Description  string   `json:"description"`
+	URL          string   `json:"url"`
+	Version      string   `json:"version"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	IsActive     bool     `json:"is_active"`
+}
+
+type UpdateA2ACardRequest struct {
 	Name         string   `json:"name" validate:"required"`
 	Description  string   `json:"description"`
 	URL          string   `json:"url"`

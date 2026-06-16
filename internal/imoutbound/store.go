@@ -4,10 +4,14 @@ package imoutbound
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/fisk086/aiops/internal/logger"
 )
 
 const (
@@ -28,6 +32,7 @@ func WithScope(ctx context.Context, agentID int64, sessionID string) context.Con
 	if agentID < 1 || sessionID == "" {
 		return ctx
 	}
+	ctx = withWrittenFilesTracker(ctx)
 	return context.WithValue(ctx, scopeKey{}, Scope{AgentID: agentID, SessionID: sessionID})
 }
 
@@ -115,6 +120,83 @@ func SanitizeFileName(name string) (string, error) {
 	return name, nil
 }
 
+// TeamConvSessionID is the outbound session key for a team conversation turn.
+func TeamConvSessionID(convID int64) string {
+	return fmt.Sprintf("team-conv-%d", convID)
+}
+
+// WriteFileBytes saves binary content for the scoped session (e.g. PNG screenshots).
+func (s *Store) WriteFileBytes(scope Scope, filename string, data []byte) (string, error) {
+	name, err := SanitizeFileName(filename)
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxOutboundFileBytes {
+		return "", fmt.Errorf("file too large (max %d bytes)", maxOutboundFileBytes)
+	}
+	dir, err := s.DirForScope(scope)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("mkdir outbound: %w", err)
+	}
+	full := filepath.Join(dir, name)
+	full = filepath.Clean(full)
+	if !strings.HasPrefix(full, dir+string(os.PathSeparator)) && full != dir {
+		return "", fmt.Errorf("invalid file path")
+	}
+	if err := os.WriteFile(full, data, 0o640); err != nil {
+		return "", fmt.Errorf("write outbound file: %w", err)
+	}
+	logger.Info("imoutbound: wrote file bytes", "path", full, "session_id", scope.SessionID, "agent_id", scope.AgentID, "bytes", len(data))
+	return FileMarkerPrefix + name + FileMarkerSuffix, nil
+}
+
+// FindRecentFileForAgent returns the newest outbound file matching basename under the agent.
+func (s *Store) FindRecentFileForAgent(agentID int64, filename string) (string, error) {
+	if agentID < 1 {
+		return "", fmt.Errorf("invalid agent id")
+	}
+	name, err := SanitizeFileName(filename)
+	if err != nil {
+		return "", err
+	}
+	base := strings.TrimSpace(s.Base())
+	if base == "" {
+		return "", fmt.Errorf("outbound store not configured")
+	}
+	agentRoot := filepath.Join(base, "lark-outbound", fmt.Sprintf("%d", agentID))
+	agentRoot = filepath.Clean(agentRoot)
+	root := filepath.Clean(filepath.Join(base, "lark-outbound"))
+	if !strings.HasPrefix(agentRoot, root+string(os.PathSeparator)) && agentRoot != root {
+		return "", fmt.Errorf("invalid outbound path")
+	}
+	var bestPath string
+	var bestMod time.Time
+	_ = filepath.WalkDir(agentRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) != name {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || info.IsDir() || info.Size() <= 0 {
+			return nil
+		}
+		if bestPath == "" || info.ModTime().After(bestMod) {
+			bestMod = info.ModTime()
+			bestPath = path
+		}
+		return nil
+	})
+	if bestPath == "" {
+		return "", fmt.Errorf("outbound file not found for agent: %s", name)
+	}
+	return bestPath, nil
+}
+
 // WriteFile saves content for the scoped IM session and returns the attachment marker.
 func (s *Store) WriteFile(scope Scope, filename, content string) (string, error) {
 	name, err := SanitizeFileName(filename)
@@ -139,6 +221,7 @@ func (s *Store) WriteFile(scope Scope, filename, content string) (string, error)
 	if err := os.WriteFile(full, []byte(content), 0o640); err != nil {
 		return "", fmt.Errorf("write outbound file: %w", err)
 	}
+	logger.Info("imoutbound: wrote text file", "path", full, "session_id", scope.SessionID, "agent_id", scope.AgentID, "bytes", len(content))
 	return FileMarkerPrefix + name + FileMarkerSuffix, nil
 }
 

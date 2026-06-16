@@ -9,7 +9,19 @@
 
     <q-banner v-if="errorMsg" class="bg-negative text-white q-mb-md" dense>{{ errorMsg }}</q-banner>
 
-    <q-table flat bordered class="radius-sm" :rows="rows" :columns="columns" row-key="id" :loading="loading" :no-data-label="t('noData')">
+    <q-table flat bordered class="q-table--soft radius-md" :rows="rows" :columns="columns" row-key="id" :loading="loading" :no-data-label="t('noData')" v-model:pagination="pagination">
+      <template #body-cell-endpoint="props">
+        <q-td :props="props" class="ellipsis" style="max-width:180px">
+          <q-tooltip v-if="props.row.endpoint" class="text-body2">{{ props.row.endpoint }}</q-tooltip>
+          <span>{{ props.row.endpoint || '—' }}</span>
+        </q-td>
+      </template>
+      <template #body-cell-created_by="props">
+        <q-td :props="props">
+          <q-badge v-if="props.row.created_by === 0" color="grey-7" outline :label="t('system')" />
+          <span v-else class="text-body2">{{ props.row.created_by }}</span>
+        </q-td>
+      </template>
       <template #body-cell-health_status="props">
         <q-td :props="props">
           <q-badge :color="healthBadgeColor(props.row.health_status)" :label="props.row.health_status || '—'" />
@@ -101,6 +113,7 @@ const {
   columns,
   errorMsg,
   load,
+  pagination,
   dialogOpen,
   form,
   editingId,

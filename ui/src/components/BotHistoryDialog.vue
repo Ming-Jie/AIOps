@@ -114,7 +114,7 @@ const props = defineProps<{
   open: boolean
   agentId: number
   agentName?: string
-  defaultChannel?: 'lark' | 'telegram' | 'dingtalk' | 'all'
+  defaultChannel?: 'lark' | 'telegram' | 'dingtalk' | 'qq' | 'wecom' | 'all'
 }>()
 
 const emit = defineEmits<{
@@ -135,12 +135,14 @@ function openInChat () {
   close()
 }
 
-const channelFilter = ref<'lark' | 'telegram' | 'dingtalk' | 'all'>('all')
+const channelFilter = ref<'lark' | 'telegram' | 'dingtalk' | 'qq' | 'wecom' | 'all'>('all')
 const channelOptions = computed(() => [
   { label: t('botHistoryChannelAll'), value: 'all' as const },
   { label: t('imEnabledOptionsLark'), value: 'lark' as const },
   { label: t('imEnabledOptionsTelegram'), value: 'telegram' as const },
-  { label: t('imEnabledOptionsDingtalk'), value: 'dingtalk' as const }
+  { label: t('imEnabledOptionsDingtalk'), value: 'dingtalk' as const },
+  { label: t('imEnabledOptionsQQ'), value: 'qq' as const },
+  { label: t('imEnabledOptionsWecom'), value: 'wecom' as const }
 ])
 
 const sessions = ref<IMChatSession[]>([])

@@ -14,6 +14,8 @@
       row-key="id"
       :loading="loading"
       flat
+      bordered
+      class="q-table--soft radius-md"
     >
       <template #body-cell-roles="props">
         <q-td :props="props">
@@ -36,9 +38,9 @@
       </template>
     </q-table>
 
-    <q-dialog v-model="userRoleDialogOpen">
-      <q-card style="min-width: 500px">
-        <q-card-section class="row items-center bg-primary text-white">
+    <q-dialog v-model="userRoleDialogOpen" transition-show="scale" transition-hide="scale">
+      <q-card class="card-soft card-soft--bordered" style="min-width: 500px; border-radius: var(--radius-xl, 18px) !important;">
+        <q-card-section class="row items-center bg-primary text-white" style="border-radius: var(--radius-xl, 18px) var(--radius-xl, 18px) 0 0;">
           <div class="text-h6">{{ t('assignRole') }}: {{ selectedUser?.username }}</div>
           <q-space />
           <q-btn icon="close" flat round dense v-close-popup />

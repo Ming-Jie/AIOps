@@ -1,4 +1,4 @@
-import type { ChatReactStep } from 'src/api/types'
+import type { ChatReactStep, FileAttachment } from 'src/api/types'
 import {
   applyPlanStepStatusToTasks,
   initTasksFromPlanTasksPayload,
@@ -85,6 +85,19 @@ function serverPayloadToReactStep (payload: Record<string, unknown>): ChatReactS
   return null
 }
 
+function attachmentsFromPayload (payload: Record<string, unknown>): FileAttachment[] | undefined {
+  const raw = payload.attachments
+  if (!Array.isArray(raw) || raw.length === 0) return undefined
+  const out: FileAttachment[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const att = item as FileAttachment
+    if (!att.filename) continue
+    out.push(att)
+  }
+  return out.length > 0 ? out : undefined
+}
+
 function reactPayloadToStep (payload: Record<string, unknown>): ChatReactStep | null {
   const reactType = payload.type as string | undefined
   if (!reactType) return null
@@ -127,6 +140,13 @@ function reactPayloadToStep (payload: Record<string, unknown>): ChatReactStep | 
     error: '错误'
   }
 
+  const attachments = attachmentsFromPayload(payload)
+
+  const inlineImage =
+    typeof content === 'string' && content.startsWith('data:image/')
+      ? content.split('\n')[0]
+      : undefined
+
   return {
     type: stepType,
     data: {
@@ -135,6 +155,8 @@ function reactPayloadToStep (payload: Record<string, unknown>): ChatReactStep | 
       tool,
       name: tool,
       ...(input != null ? { input } : {}),
+      ...(attachments != null ? { attachments } : {}),
+      ...(inlineImage != null ? { inline_image: inlineImage } : {}),
       reactType,
       label: labels[reactType] || reactType
     },
@@ -219,9 +241,16 @@ function streamPayloadToStep (payload: Record<string, unknown>): ChatReactStep |
   if (eventType === 'tool_result') {
     const toolName = (payload.tool_name as string) || 'tool'
     const resultContent = toolResultPayloadToContentString(payload)
+    const attachments = attachmentsFromPayload(payload)
+    const hasInlineImage = resultContent.startsWith('data:image/')
     return {
       type: 'observation',
-      data: { name: toolName, content: resultContent },
+      data: {
+        name: toolName,
+        content: resultContent,
+        ...(attachments != null ? { attachments } : {}),
+        ...(hasInlineImage ? { inline_image: resultContent.split('\n')[0] } : {})
+      },
       meta: { modelName: (payload as Record<string, unknown>).model_name || '' },
       timestamp: (payload as Record<string, unknown>).timestamp as string
     }

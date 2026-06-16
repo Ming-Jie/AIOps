@@ -15,8 +15,9 @@ import (
 )
 
 type ModelService struct {
-	store storage.ModelConfigStore
-	cache sync.Map
+	store      storage.ModelConfigStore
+	cache      sync.Map
+	modelNames sync.Map
 }
 
 func NewModelService(store storage.ModelConfigStore) *ModelService {
@@ -37,11 +38,13 @@ func (s *ModelService) List(ctx context.Context) ([]*appmodel.ModelConfig, error
 
 func (s *ModelService) Update(ctx context.Context, id int64, cfg *appmodel.ModelConfig) (*appmodel.ModelConfig, error) {
 	s.cache.Delete(id)
+	s.modelNames.Delete(id)
 	return s.store.UpdateModelConfig(ctx, id, cfg)
 }
 
 func (s *ModelService) Delete(ctx context.Context, id int64) error {
 	s.cache.Delete(id)
+	s.modelNames.Delete(id)
 	return s.store.DeleteModelConfig(ctx, id)
 }
 
@@ -67,6 +70,23 @@ func (s *ModelService) GetChatModel(ctx context.Context, configID int64) (model.
 	}
 	s.cache.Store(configID, m)
 	return m, nil
+}
+
+func (s *ModelService) ResolveModelName(ctx context.Context, configID int64) (string, error) {
+	if cached, ok := s.modelNames.Load(configID); ok {
+		if name, ok := cached.(string); ok && name != "" {
+			return name, nil
+		}
+	}
+	cfg, err := s.store.GetModelConfig(ctx, configID)
+	if err != nil {
+		return "", fmt.Errorf("model config %d: %w", configID, err)
+	}
+	if cfg == nil {
+		return "", fmt.Errorf("model config %d not found", configID)
+	}
+	s.modelNames.Store(configID, cfg.ModelName)
+	return cfg.ModelName, nil
 }
 
 func (s *ModelService) buildChatModel(ctx context.Context, cfg *appmodel.ModelConfig) (model.ToolCallingChatModel, error) {

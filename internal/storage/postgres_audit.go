@@ -13,27 +13,47 @@ func sanitizeAuditText(s string) string {
 	return strings.ToValidUTF8(s, "\uFFFD")
 }
 
-func (s *PostgresStorage) buildAuditLogWhere(filter *AuditLogFilter) string {
-	where := "1=1"
+func (s *PostgresStorage) buildAuditLogWhere(filter *AuditLogFilter) (string, []any) {
+	if filter == nil {
+		return "1=1", nil
+	}
+	var clauses []string
+	var args []any
+	n := 0
 	if filter.UserID != "" {
-		where += fmt.Sprintf(" AND user_id = '%s'", filter.UserID)
+		n++
+		clauses = append(clauses, fmt.Sprintf("user_id = $%d", n))
+		args = append(args, filter.UserID)
 	}
 	if filter.AgentID != 0 {
-		where += fmt.Sprintf(" AND agent_id = %d", filter.AgentID)
+		n++
+		clauses = append(clauses, fmt.Sprintf("agent_id = $%d", n))
+		args = append(args, filter.AgentID)
 	}
 	if filter.SessionID != "" {
-		where += fmt.Sprintf(" AND session_id = '%s'", filter.SessionID)
+		n++
+		clauses = append(clauses, fmt.Sprintf("session_id = $%d", n))
+		args = append(args, filter.SessionID)
 	}
 	if filter.ToolName != "" {
-		where += fmt.Sprintf(" AND tool_name = '%s'", filter.ToolName)
+		n++
+		clauses = append(clauses, fmt.Sprintf("tool_name = $%d", n))
+		args = append(args, filter.ToolName)
 	}
 	if filter.RiskLevel != "" {
-		where += fmt.Sprintf(" AND risk_level = '%s'", filter.RiskLevel)
+		n++
+		clauses = append(clauses, fmt.Sprintf("risk_level = $%d", n))
+		args = append(args, filter.RiskLevel)
 	}
 	if filter.Status != "" {
-		where += fmt.Sprintf(" AND status = '%s'", filter.Status)
+		n++
+		clauses = append(clauses, fmt.Sprintf("status = $%d", n))
+		args = append(args, filter.Status)
 	}
-	return where
+	if len(clauses) == 0 {
+		return "1=1", nil
+	}
+	return strings.Join(clauses, " AND "), args
 }
 
 func (s *PostgresStorage) CreateAuditLog(log *model.AuditLog) (*model.AuditLog, error) {
@@ -55,11 +75,11 @@ func (s *PostgresStorage) CreateAuditLog(log *model.AuditLog) (*model.AuditLog, 
 }
 
 func (s *PostgresStorage) ListAuditLogs(filter *AuditLogFilter) ([]*model.AuditLog, int64, error) {
-	where := s.buildAuditLogWhere(filter)
+	where, args := s.buildAuditLogWhere(filter)
 
 	var total int64
 	err := s.pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM audit_logs WHERE "+where,
+		"SELECT COUNT(*) FROM audit_logs WHERE "+where, args...,
 	).Scan(&total)
 	if err != nil {
 		return nil, 0, err
@@ -77,10 +97,11 @@ func (s *PostgresStorage) ListAuditLogs(filter *AuditLogFilter) ([]*model.AuditL
 	}
 	offset := (page - 1) * pageSize
 
-	rows, err := s.pool.Query(context.Background(),
-		fmt.Sprintf(`SELECT id, user_id, agent_id, session_id, tool_name, action, risk_level, input, output, error, status, duration_ms, ip_address, created_at 
-			FROM audit_logs WHERE %s ORDER BY created_at DESC LIMIT %d OFFSET %d`, where, pageSize, offset),
-	)
+	n := len(args)
+	query := fmt.Sprintf(`SELECT id, user_id, agent_id, session_id, tool_name, action, risk_level, input, output, error, status, duration_ms, ip_address, created_at 
+		FROM audit_logs WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, n+1, n+2)
+	qargs := append(args, pageSize, offset)
+	rows, err := s.pool.Query(context.Background(), query, qargs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -118,11 +139,11 @@ func (s *PostgresStorage) GetAuditLog(id int64) (*model.AuditLog, error) {
 }
 
 func (s *PostgresStorage) CountAuditLogs(filter *AuditLogFilter) (int64, error) {
-	where := s.buildAuditLogWhere(filter)
+	where, args := s.buildAuditLogWhere(filter)
 
 	var count int64
 	err := s.pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM audit_logs WHERE "+where,
+		"SELECT COUNT(*) FROM audit_logs WHERE "+where, args...,
 	).Scan(&count)
 	if err != nil {
 		return 0, err
@@ -131,10 +152,10 @@ func (s *PostgresStorage) CountAuditLogs(filter *AuditLogFilter) (int64, error) 
 }
 
 func (s *PostgresStorage) DeleteAuditLogs(filter *AuditLogFilter) (int64, error) {
-	where := s.buildAuditLogWhere(filter)
+	where, args := s.buildAuditLogWhere(filter)
 
 	result, err := s.pool.Exec(context.Background(),
-		"DELETE FROM audit_logs WHERE "+where,
+		"DELETE FROM audit_logs WHERE "+where, args...,
 	)
 	if err != nil {
 		return 0, err

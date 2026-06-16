@@ -11,7 +11,7 @@
 
     <p class="text-caption text-grey-7 q-mb-md">{{ t('channelHelp') }}</p>
 
-    <q-table flat bordered class="radius-sm" :rows="rows" :columns="columns" row-key="id" :loading="loading" :no-data-label="t('noData')">
+    <q-table flat bordered class="q-table--soft radius-md" :rows="rows" :columns="columns" row-key="id" :loading="loading" :no-data-label="t('noData')">
       <template #body-cell-webhook_url="props">
         <q-td :props="props">
           <span class="ellipsis block" style="max-width: 220px;">{{ props.row.webhook_url || '—' }}</span>

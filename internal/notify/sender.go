@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const httpTimeout = 20 * time.Second
+var httpClient = &http.Client{Timeout: 20 * time.Second}
 
 // SendText delivers plain text according to channel kind and credentials.
 func SendText(ctx context.Context, kind, webhookURL, appID, appSecret string, extra map[string]string, text string) error {
@@ -104,8 +104,7 @@ func larkSendIMApp(ctx context.Context, appID, appSecret string, extra map[strin
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{Timeout: httpTimeout}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -247,8 +246,7 @@ func postJSONRaw(ctx context.Context, rawURL string, body any) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	client := &http.Client{Timeout: httpTimeout}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

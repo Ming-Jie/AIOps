@@ -1,5 +1,6 @@
 .PHONY: help dev build build-ui build-desktop run clean test lint lint-go lint-ui \
-	format format-go format-ui check swagger setup install-hooks docker-build docker-up docker-down
+	format format-go format-ui check swagger setup install-hooks docker-build docker-up docker-down \
+	e2e e2e-install e2e-headed e2e-report e2e-docker-up e2e-docker-down
 
 help:
 	@echo "AIOps Makefile"
@@ -126,3 +127,36 @@ docker-up:
 docker-down:
 	@echo "停止 Docker 服务..."
 	docker compose down
+
+# ──────────────────────────────────────────────
+# E2E 测试 (Playwright)
+# ──────────────────────────────────────────────
+
+E2E_DIR := e2e
+
+e2e-install:
+	@echo "安装 Playwright 和浏览器..."
+	cd $(E2E_DIR) && npm install && npx playwright install chromium
+
+e2e:
+	@echo "运行 E2E 测试 (headless)..."
+	cd $(E2E_DIR) && npx playwright test
+
+e2e-headed:
+	@echo "运行 E2E 测试 (有头模式)..."
+	cd $(E2E_DIR) && npx playwright test --headed
+
+e2e-report:
+	@echo "打开 E2E 测试报告..."
+	cd $(E2E_DIR) && npx playwright show-report
+
+e2e-docker-up:
+	@echo "启动 E2E 测试环境 (Docker Compose)..."
+	docker compose -f $(E2E_DIR)/docker-compose.e2e.yml up -d --build
+	@echo "等待 app 就绪..."
+	@sleep 5
+	@echo "App 就绪，可运行 'make e2e' 执行测试"
+
+e2e-docker-down:
+	@echo "停止 E2E 测试环境..."
+	docker compose -f $(E2E_DIR)/docker-compose.e2e.yml down -v

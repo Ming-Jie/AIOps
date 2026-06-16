@@ -113,6 +113,10 @@ definitions:
     properties:
       category:
         type: string
+      chat_user_ids:
+        items:
+          type: integer
+        type: array
       description:
         maxLength: 1000
         minLength: 1
@@ -230,6 +234,12 @@ definitions:
         type: string
       notify_on_approval:
         type: boolean
+      qq_app_id:
+        description: QQAppID is the QQ Bot App ID from bot.q.qq.com.
+        type: string
+      qq_bot_token:
+        description: QQBotToken is the QQ Bot Token from bot.q.qq.com.
+        type: string
       secret:
         type: string
       telegram_chat_id:
@@ -239,9 +249,8 @@ definitions:
       webhook_url:
         type: string
       ws_enabled:
-        description: 'WsEnabled: when true (or nil legacy), server global Start()
-          opens WebSocket on boot; false = register credentials only, manual Start
-          per bot.'
+        description: 'WsEnabled: when true, server global Start() opens WebSocket
+          on boot; false or unset = register credentials only, manual Start per bot.'
         type: boolean
     type: object
   github_com_fisk086_aiops_internal_schema.LoginRequest:
@@ -426,6 +435,10 @@ definitions:
     properties:
       category:
         type: string
+      chat_user_ids:
+        items:
+          type: integer
+        type: array
       description:
         type: string
       name:

@@ -35,6 +35,7 @@ import (
 	"github.com/fisk086/aiops/internal/memory"
 	"github.com/fisk086/aiops/internal/memory/pgvector"
 	"github.com/fisk086/aiops/internal/openviking"
+	"github.com/fisk086/aiops/internal/orchestrator"
 	"github.com/fisk086/aiops/internal/scheduler"
 	agentSchema "github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/service"
@@ -68,7 +69,7 @@ import (
 // @name Authorization
 // @description JWT access token (Authorization: Bearer plus space plus token)
 func main() {
-	_ = godotenv.Load()
+	_ = godotenv.Load() // .env is optional; log is not yet initialized so error is discarded
 	logger.Init()
 
 	settings := config.Load()
@@ -76,6 +77,9 @@ func main() {
 
 	if settings.JWTSecretKey == "" {
 		logger.Fatal("JWT_SECRET_KEY environment variable is required")
+	}
+	if settings.JWTSecretKey == "EIeOsy5W7cbdhlQGBmCsbhTDphjUlAisxoGmnThziuA=" {
+		logger.Warn("JWT_SECRET_KEY is set to the default example key; generate a unique key for production")
 	}
 	if settings.DisableLoginCaptcha {
 		logger.Warn("DISABLE_LOGIN_CAPTCHA is enabled; login captcha verification is off (not for production)")
@@ -150,6 +154,7 @@ func main() {
 
 	runtime := agent.NewRuntimeWithSkill(chatModel, mcpClient, skillLoader, skillRegistry, activeStore)
 	runtime.SetDefaultChatModelName(settings.EffectiveChatModel())
+	runtime.SetCodeExecutor(workflow.ExecuteCode)
 
 	createDemoAgent(activeStore, runtime)
 	initDependencies(activeStore, runtime)
@@ -157,10 +162,20 @@ func main() {
 	if n := skillService.SyncBuiltinSkills(skillRegistry, settings.SkillsDir); n > 0 {
 		logger.Info("synced builtin skills from skills directory", "created", n)
 	}
+	if err := skills.WatchDir(context.Background(), skillLoader, skillRegistry, func(def *skills.SkillDefinition) {
+		if n := skillService.SyncBuiltinSkills(skillRegistry, settings.SkillsDir); n > 0 {
+			logger.Info("synced hot-loaded skill to database", "created", n, "key", def.Key)
+		}
+	}); err != nil {
+		logger.Warn("failed to start skill watcher", "err", err)
+	} else {
+		logger.Info("skill hot-reload watcher started", "dir", settings.SkillsDir)
+	}
 	syncAgentsToRuntime(activeStore, runtime)
 
-	// IM bot initialization (supports lark, dingtalk, wecom, etc.)
-	imManager := immanager.NewIMManager()
+	// IM bot initialization (supports lark, dingtalk, telegram, qq)
+	// IM_TYPES env var controls which types are enabled; empty = all.
+	imManager := immanager.NewIMManager(settings.IMTypes)
 	if err := imManager.ScanAndRegister(activeStore, runtime); err != nil {
 		logger.Warn("failed to scan and register im bots", "err", err)
 	}
@@ -214,6 +229,7 @@ func main() {
 	imhistory.SetGlobalRecorder(imHistoryRecorder)
 	imHistoryService := service.NewIMHistoryService(activeStore)
 	imoutbound.GlobalStore().SetBase(settings.UploadDir)
+	skills.SetGeneratedFileBase(settings.UploadDir)
 	larkbot.Global().SetOutboundBase(settings.UploadDir)
 	dingtalkbot.Global().SetOutboundBase(settings.UploadDir)
 
@@ -250,15 +266,16 @@ func main() {
 	}
 	agentCtrl := controller.NewAgentController(agentService, chatService, runtime, jwtCfg, chatUserStore, rbacSvc)
 	agentCtrl.SetIMManager(imManager)
-	skillCtrl := controller.NewSkillController(skillService, skillRegistry, settings.SkillsDir)
-	mcpCtrl := controller.NewMCPController(mcpService)
-	channelCtrl := controller.NewChannelController(channelService)
-	workflowCtrl := controller.NewWorkflowController(workflowService)
+	skillCtrl := controller.NewSkillController(skillService, skillRegistry, settings.SkillsDir, jwtCfg, chatUserStore)
+	mcpCtrl := controller.NewMCPController(mcpService, jwtCfg, chatUserStore)
+	channelCtrl := controller.NewChannelController(channelService, jwtCfg, chatUserStore)
+	workflowCtrl := controller.NewWorkflowController(workflowService, jwtCfg, chatUserStore)
 	rbacCtrl := controller.NewRBACController(rbacSvc, gormDB.UserStore, jwtCfg)
-	messageCtrl := controller.NewMessageController(messageService)
+	messageCtrl := controller.NewMessageController(messageService, jwtCfg, chatUserStore)
 	graphWorkflowCtrl := controller.NewGraphWorkflowController(graphWorkflowService)
 	chatCtrl := controller.NewChatController(chatService, jwtCfg, chatUserStore, settings.UploadDir, rbacSvc)
 	chatCtrl.SetIMHistoryService(imHistoryService)
+	chatCtrl.SetAgentService(agentService)
 	scheduleCtrl := controller.NewScheduleController(scheduleService, jwtCfg, chatUserStore)
 	var auditUserLookup storage.UserStore
 	if gormDB != nil {
@@ -267,6 +284,33 @@ func main() {
 	auditCtrl := controller.NewAuditController(service.NewAuditService(activeStore, auditUserLookup, activeStore), jwtCfg, auditUserLookup)
 	versionCtrl := controller.NewVersionController(settings.GitHubRepo)
 	approvalCtrl := controller.NewApprovalController(service.NewApprovalService(activeStore, activeStore), rbacSvc, jwtCfg, chatUserStore)
+
+	// Guardrail service & controller (requires GORM for new models)
+	var guardrailCtrl *controller.GuardrailController
+	var teamCtrl *controller.TeamController
+	if gormDB != nil {
+		guardrailStore := service.NewGuardrailStore(gormDB.DB)
+		guardrailSvc := service.NewGuardrailService(guardrailStore)
+		guardrailCtrl = controller.NewGuardrailController(guardrailSvc, jwtCfg, chatUserStore, rbacSvc)
+
+		orch := orchestrator.NewOrchestrator(service.NewTeamStore(gormDB.DB), runtime)
+		teamSvc := service.NewTeamService(service.NewTeamStore(gormDB.DB), agentService, orch)
+		teamCtrl = controller.NewTeamController(teamSvc, jwtCfg, chatUserStore, rbacSvc)
+
+		for _, awr := range runtime.ListAgents() {
+			orch.RegisterAgent(awr)
+		}
+
+		logger.Info("guardrails & teams feature enabled")
+	}
+
+	var evalCtrl *controller.EvalController
+	if gormDB != nil {
+		evalStore := service.NewEvalStore(gormDB.DB)
+		evalSvc := service.NewEvalService(evalStore, agentService, runtime)
+		evalCtrl = controller.NewEvalController(evalSvc, jwtCfg, chatUserStore)
+		logger.Info("eval feature enabled")
+	}
 
 	var usageCtrl *controller.TokenUsageController
 	if gormDB != nil {
@@ -310,17 +354,52 @@ func main() {
 	})))
 
 	corsCfg := cors.DefaultConfig()
-	corsCfg.AllowAllOrigins = true
+	origins := strings.Split(settings.CORSAllowedOrigins, ",")
+	hasWildcard := false
+	for _, o := range origins {
+		if o == "*" || o == "" {
+			hasWildcard = true
+			break
+		}
+	}
+	if hasWildcard {
+		logger.Warn("CORS allows all origins; set CORS_ALLOWED_ORIGINS to specific origins in production")
+		corsCfg.AllowAllOrigins = true
+	} else {
+		corsCfg.AllowOrigins = origins
+	}
 	corsCfg.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 	corsCfg.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-Requested-With"}
 	corsCfg.ExposeHeaders = []string{"Content-Length", "Content-Type", "X-Session-ID", "X-Duration-MS"}
 	corsCfg.MaxAge = 86400 * time.Second
 	h.Use(cors.New(corsCfg))
 
-	// Serve uploaded files: Hertz Static() joins Root + full ctx.Path(), so requests would wrongly map to
+	// Serve uploaded files and terminal-generated files with auth.
+	chatFiles := h.Group("/api/v1/chat")
+	if chatUserStore != nil {
+		chatFiles.Use(auth.JWTMiddleware(jwtCfg, func(userID int64) (*auth.User, error) {
+			user, err := chatUserStore.GetUserByID(userID)
+			if err != nil {
+				return nil, err
+			}
+			return &auth.User{
+				ID:       user.ID,
+				Username: user.Username,
+				Email:    user.Email,
+				Status:   string(user.Status),
+				IsAdmin:  user.IsAdmin,
+			}, nil
+		}))
+	}
+	// Hertz Static() joins Root + full ctx.Path(), so requests would wrongly map to
 	// uploads/api/v1/chat/files/... . Strip the four URL segments (/api /v1 /chat /files) so paths resolve to uploads/<uid>/<file>.
-	h.StaticFS("/api/v1/chat/files", &app.FS{
+	chatFiles.StaticFS("/files", &app.FS{
 		Root:        settings.UploadDir,
+		PathRewrite: app.NewPathSlashesStripper(4),
+	})
+	// Strip 4 segments: /api /v1 /chat /terminal-files → remaining uid/filename maps to <Root>/uid/filename
+	chatFiles.StaticFS("/terminal-files", &app.FS{
+		Root:        skills.TermFileDir(),
 		PathRewrite: app.NewPathSlashesStripper(4),
 	})
 
@@ -350,22 +429,42 @@ func main() {
 	if modelCtrl != nil {
 		modelCtrl.RegisterRoutes(h)
 	}
+	if guardrailCtrl != nil {
+		guardrailCtrl.RegisterRoutes(h)
+	}
+	if teamCtrl != nil {
+		teamCtrl.RegisterRoutes(h)
+	}
+	if evalCtrl != nil {
+		evalCtrl.RegisterRoutes(h)
+	}
 	versionCtrl.RegisterRoutes(h)
 
 	// Lark bot controller
-	larkBotCtrl := controller.NewLarkBotController(agentService)
+	larkBotCtrl := controller.NewLarkBotController(agentService, jwtCfg, chatUserStore, rbacSvc)
 	larkBotCtrl.RegisterRoutes(h)
 
 	// Telegram bot controller
-	telegramBotCtrl := controller.NewTelegramBotController(agentService)
+	telegramBotCtrl := controller.NewTelegramBotController(agentService, jwtCfg, chatUserStore, rbacSvc)
 	telegramBotCtrl.RegisterRoutes(h)
 
 	// DingTalk bot controller
-	dingtalkBotCtrl := controller.NewDingtalkBotController(agentService)
+	dingtalkBotCtrl := controller.NewDingtalkBotController(agentService, jwtCfg, chatUserStore, rbacSvc)
 	dingtalkBotCtrl.RegisterRoutes(h)
+
+	// QQ bot controller
+	qqBotCtrl := controller.NewQQBotController(agentService, jwtCfg, chatUserStore, rbacSvc)
+	qqBotCtrl.RegisterRoutes(h)
 
 	imBotHistoryCtrl := controller.NewIMBotHistoryController(imHistoryService, jwtCfg, chatUserStore)
 	imBotHistoryCtrl.RegisterRoutes(h)
+
+	// IM settings endpoint: exposes enabled IM types for frontend dropdown filtering
+	h.GET("/api/v1/im-settings", func(ctx context.Context, hc *app.RequestContext) {
+		hc.JSON(consts.StatusOK, agentSchema.SuccessResponse(map[string]any{
+			"enabled_types": imManager.EnabledTypes(),
+		}))
+	})
 
 	h.GET("/api/swagger/*filepath", swagger.WrapHandler(swaggerFiles.Handler))
 
@@ -378,6 +477,11 @@ func main() {
 	defer stop()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("shutdown panicked", "recover", r)
+			}
+		}()
 		<-ctx.Done()
 		logger.Info("shutting down server")
 		scheduleService.StopScheduler()
@@ -552,7 +656,7 @@ func createDemoAgent(store storage.Storage, runtime *agent.Runtime) {
 		},
 	}
 
-	createdAgent, err := store.CreateAgent(agentReq)
+	createdAgent, err := store.CreateAgent(agentReq, 0)
 	if err != nil {
 		logger.Error("failed to create demo agent", "err", err)
 		return

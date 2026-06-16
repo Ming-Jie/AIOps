@@ -13,6 +13,7 @@ type Agent struct {
 	Category    string    `json:"category"`
 	IsBuiltin   bool      `json:"is_builtin"`
 	IsActive    bool      `json:"is_active"`
+	CreatedBy   int64     `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

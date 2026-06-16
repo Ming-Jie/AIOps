@@ -2274,6 +2274,12 @@ const docTemplate = `{
                 "category": {
                     "type": "string"
                 },
+                "chat_user_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "description": {
                     "type": "string",
                     "maxLength": 1000,
@@ -2433,6 +2439,14 @@ const docTemplate = `{
                 "notify_on_approval": {
                     "type": "boolean"
                 },
+                "qq_app_id": {
+                    "description": "QQAppID is the QQ Bot App ID from bot.q.qq.com.",
+                    "type": "string"
+                },
+                "qq_bot_token": {
+                    "description": "QQBotToken is the QQ Bot Token from bot.q.qq.com.",
+                    "type": "string"
+                },
                 "secret": {
                     "type": "string"
                 },
@@ -2446,7 +2460,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ws_enabled": {
-                    "description": "WsEnabled: when true (or nil legacy), server global Start() opens WebSocket on boot; false = register credentials only, manual Start per bot.",
+                    "description": "WsEnabled: when true, server global Start() opens WebSocket on boot; false or unset = register credentials only, manual Start per bot.",
                     "type": "boolean"
                 }
             }
@@ -2726,6 +2740,12 @@ const docTemplate = `{
             "properties": {
                 "category": {
                     "type": "string"
+                },
+                "chat_user_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "description": {
                     "type": "string"

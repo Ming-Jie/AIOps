@@ -17,6 +17,7 @@ import (
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/dop251/goja"
 	"github.com/expr-lang/expr"
+	"github.com/fisk086/aiops/internal/imoutbound"
 	"github.com/fisk086/aiops/internal/logger"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/skills"
@@ -25,7 +26,7 @@ import (
 const (
 	builtinSkillSearch           = "builtin_skill.search"
 	builtinSkillCalculator       = "builtin_skill.calculator"
-	builtinSkillCodeInterpreter  = "builtin_skill.code_interpreter"
+	builtinSkillJSInterpreter    = "builtin_skill.js_interpreter"
 	builtinSkillLogAnalyzer      = "builtin_skill.log_analyzer"
 	builtinSkillHTTPClient       = "builtin_skill.http_client"
 	builtinSkillFileParser       = "builtin_skill.office_doc"
@@ -50,12 +51,12 @@ const (
 	builtinSkillGitHubIssue      = "builtin_skill.github_issue"
 	builtinSkillSlackNotify      = "builtin_skill.slack_notify"
 	builtinSkillImageAnalyzer    = "builtin_skill.image_analyzer"
-	builtinSkillBrowserClient    = "builtin_skill.browser_client"
-	builtinSkillVisibleBrowser   = "builtin_skill.visible_browser"
+	builtinSkillBrowser          = "builtin_skill.browser"
 	builtinSkillHTTPTest         = "builtin_skill.http_test"
 	builtinSkillTestRunner       = "builtin_skill.test_runner"
 	builtinSkillTestReportParser = "builtin_skill.test_report_parser"
 	builtinSkillLoadTest         = "builtin_skill.load_test"
+	builtinSkillPlaywright       = "builtin_skill.playwright"
 	builtinSkillRedisTool        = "builtin_skill.redis_tool"
 	builtinSkillMySQLExplain     = "builtin_skill.mysql_explain"
 	builtinSkillESQuery          = "builtin_skill.es_query"
@@ -81,11 +82,29 @@ const (
 	builtinSkillEthereumQuery    = "builtin_skill.ethereum_query"
 	builtinSkillSmartContract    = "builtin_skill.smart_contract"
 	builtinSkillTransaction      = "builtin_skill.transaction_analyzer"
+	builtinSkillHelm             = "builtin_skill.helm"
+	builtinSkillAnsible          = "builtin_skill.ansible"
+	builtinSkillKafka            = "builtin_skill.kafka"
+	builtinSkillMongoDB          = "builtin_skill.mongodb"
+	builtinSkillPulumi           = "builtin_skill.pulumi"
+	builtinSkillVault            = "builtin_skill.vault"
+	builtinSkillGitLab           = "builtin_skill.gitlab"
+	builtinSkillSonarQube        = "builtin_skill.sonarqube"
+	builtinSkillKustomize        = "builtin_skill.kustomize"
+	builtinSkillIngress          = "builtin_skill.ingress"
+	builtinSkillIstio            = "builtin_skill.istio"
+	builtinSkillDatadog          = "builtin_skill.datadog"
+	builtinSkillPagerDuty        = "builtin_skill.pagerduty"
+	builtinSkillOpenTelemetry    = "builtin_skill.opentelemetry"
+	builtinSkillHarbor           = "builtin_skill.harbor"
+	builtinSkillTerminal         = "builtin_skill.terminal"
 
 	toolWebSearch     = "builtin_web_search"
 	toolHTTPClient    = "builtin_http_client"
 	toolCalculate     = "builtin_calculate"
 	toolRunJavaScript = "builtin_run_javascript"
+	toolRunPython     = "builtin_run_python"
+	toolTerminal      = "builtin_terminal"
 
 	maxFetchBodyBytes = 2 << 20 // 2 MiB
 	fetchTimeout      = 25 * time.Second
@@ -189,8 +208,11 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 	if _, ok := want[builtinSkillCalculator]; ok {
 		safeAppendTool(newBuiltinCalculateTool(), builtinSkillCalculator)
 	}
-	if _, ok := want[builtinSkillCodeInterpreter]; ok {
-		safeAppendTool(newBuiltinRunJavaScriptTool(), builtinSkillCodeInterpreter)
+	if _, ok := want[builtinSkillJSInterpreter]; ok {
+		safeAppendTool(newBuiltinRunJavaScriptTool(), builtinSkillJSInterpreter)
+	}
+	if _, ok := want["builtin_skill.python_interpreter"]; ok {
+		safeAppendTool(r.newBuiltinRunPythonTool(), "builtin_skill.python_interpreter")
 	}
 	if _, ok := want[builtinSkillLogAnalyzer]; ok {
 		safeAppendTool(skills.NewBuiltinLogAnalyzerTool(), builtinSkillLogAnalyzer)
@@ -213,6 +235,9 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 	}
 	if _, ok := want[builtinSkillDockerOperator]; ok {
 		safeAppendTool(skills.NewBuiltinDockerOperatorTool(), builtinSkillDockerOperator)
+	}
+	if _, ok := want[builtinSkillTerminal]; ok {
+		safeAppendTool(skills.NewBuiltinTerminalTool(), builtinSkillTerminal)
 	}
 	if _, ok := want[builtinSkillDBQuery]; ok {
 		safeAppendTool(skills.NewBuiltinDBQueryTool(), builtinSkillDBQuery)
@@ -262,11 +287,8 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 	if _, ok := want[builtinSkillImageAnalyzer]; ok {
 		safeAppendTool(skills.NewBuiltinImageAnalyzerTool(), builtinSkillImageAnalyzer)
 	}
-	if _, ok := want[builtinSkillBrowserClient]; ok {
-		safeAppendTool(skills.NewBuiltinBrowserTool(), builtinSkillBrowserClient)
-	}
-	if _, ok := want[builtinSkillVisibleBrowser]; ok {
-		safeAppendTool(skills.NewBuiltinVisibleBrowserTool(), builtinSkillVisibleBrowser)
+	if _, ok := want[builtinSkillBrowser]; ok {
+		safeAppendTool(skills.NewBuiltinBrowserTool(), builtinSkillBrowser)
 	}
 	if _, ok := want[builtinSkillHTTPTest]; ok {
 		safeAppendTool(skills.NewBuiltinHTTPTestTool(), builtinSkillHTTPTest)
@@ -279,6 +301,9 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 	}
 	if _, ok := want[builtinSkillLoadTest]; ok {
 		safeAppendTool(skills.NewBuiltinLoadTestTool(), builtinSkillLoadTest)
+	}
+	if _, ok := want[builtinSkillPlaywright]; ok {
+		safeAppendTool(skills.NewBuiltinPlaywrightTool(), builtinSkillPlaywright)
 	}
 	if _, ok := want[builtinSkillRedisTool]; ok {
 		safeAppendTool(skills.NewBuiltinRedisTool(), builtinSkillRedisTool)
@@ -354,6 +379,51 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 	if _, ok := want[builtinSkillTransaction]; ok {
 		safeAppendTool(skills.NewBuiltinTransactionAnalyzerTool(), builtinSkillTransaction)
 	}
+	if _, ok := want[builtinSkillHelm]; ok {
+		safeAppendTool(skills.NewBuiltinHelmTool(), builtinSkillHelm)
+	}
+	if _, ok := want[builtinSkillAnsible]; ok {
+		safeAppendTool(skills.NewBuiltinAnsibleTool(), builtinSkillAnsible)
+	}
+	if _, ok := want[builtinSkillKafka]; ok {
+		safeAppendTool(skills.NewBuiltinKafkaTool(), builtinSkillKafka)
+	}
+	if _, ok := want[builtinSkillMongoDB]; ok {
+		safeAppendTool(skills.NewBuiltinMongoDBTool(), builtinSkillMongoDB)
+	}
+	if _, ok := want[builtinSkillPulumi]; ok {
+		safeAppendTool(skills.NewBuiltinPulumiTool(), builtinSkillPulumi)
+	}
+	if _, ok := want[builtinSkillVault]; ok {
+		safeAppendTool(skills.NewBuiltinVaultTool(), builtinSkillVault)
+	}
+	if _, ok := want[builtinSkillGitLab]; ok {
+		safeAppendTool(skills.NewBuiltinGitLabTool(), builtinSkillGitLab)
+	}
+	if _, ok := want[builtinSkillSonarQube]; ok {
+		safeAppendTool(skills.NewBuiltinSonarQubeTool(), builtinSkillSonarQube)
+	}
+	if _, ok := want[builtinSkillKustomize]; ok {
+		safeAppendTool(skills.NewBuiltinKustomizeTool(), builtinSkillKustomize)
+	}
+	if _, ok := want[builtinSkillIngress]; ok {
+		safeAppendTool(skills.NewBuiltinIngressTool(), builtinSkillIngress)
+	}
+	if _, ok := want[builtinSkillIstio]; ok {
+		safeAppendTool(skills.NewBuiltinIstioTool(), builtinSkillIstio)
+	}
+	if _, ok := want[builtinSkillDatadog]; ok {
+		safeAppendTool(skills.NewBuiltinDatadogTool(), builtinSkillDatadog)
+	}
+	if _, ok := want[builtinSkillPagerDuty]; ok {
+		safeAppendTool(skills.NewBuiltinPagerDutyTool(), builtinSkillPagerDuty)
+	}
+	if _, ok := want[builtinSkillOpenTelemetry]; ok {
+		safeAppendTool(skills.NewBuiltinOpenTelemetryTool(), builtinSkillOpenTelemetry)
+	}
+	if _, ok := want[builtinSkillHarbor]; ok {
+		safeAppendTool(skills.NewBuiltinHarborTool(), builtinSkillHarbor)
+	}
 	if len(errs) > 0 {
 		logger.Error("failed to load builtin skill tools for agent", "agent_id", agentID, "errors", errs)
 		return nil, fmt.Errorf("failed to load builtin skill tools: %s", strings.Join(errs, "; "))
@@ -370,7 +440,7 @@ func (r *Runtime) builtinSkillToolsForAgent(agent *schema.AgentWithRuntime) ([]t
 }
 
 // skillUsageHintsFromAgent adds instruction text so the model uses builtin tools instead of refusing.
-func (r *Runtime) skillUsageHintsFromAgent(agent *schema.AgentWithRuntime) string {
+func (r *Runtime) skillUsageHintsFromAgent(ctx context.Context, agent *schema.AgentWithRuntime) string {
 	ids := skillIDsForAgent(agent)
 	if len(ids) == 0 {
 		return ""
@@ -379,14 +449,21 @@ func (r *Runtime) skillUsageHintsFromAgent(agent *schema.AgentWithRuntime) strin
 	for _, id := range ids {
 		want[strings.TrimSpace(id)] = struct{}{}
 	}
+	_, isIM := imoutbound.ScopeFromContext(ctx)
 	var parts []string
+	if isIM {
+		_, hasTerm := want[builtinSkillTerminal]
+		parts = append(parts, imoutbound.IMSkillUsageHints(hasTerm))
+	} else {
+		parts = append(parts, "- **Web Save File**: Use `builtin_web_save_file` to save text files for download (max 1MB). Reply with brief text only—never paste file contents.")
+	}
 	if _, ok := want[builtinSkillSearch]; ok {
 		parts = append(parts, "- **Web / links**: Use `"+toolHTTPClient+"` with an **https** URL to read page text (HTML is automatically stripped). Use `"+toolWebSearch+"` with a **query** for quick facts (DuckDuckGo). Do not claim you cannot open links if these tools are available.")
 	}
 	if _, ok := want[builtinSkillCalculator]; ok {
 		parts = append(parts, "- **Math**: Use `"+toolCalculate+"` with field `expression` (safe arithmetic / comparisons).")
 	}
-	if _, ok := want[builtinSkillCodeInterpreter]; ok {
+	if _, ok := want[builtinSkillJSInterpreter]; ok {
 		parts = append(parts, "- **Code**: Use `"+toolRunJavaScript+"` with field `code` for short JavaScript snippets (sandboxed, timeout). `console.log` / `info` / `warn` / `error` capture output; no Node/fs/network.")
 	}
 	if _, ok := want[builtinSkillLogAnalyzer]; ok {
@@ -409,6 +486,13 @@ func (r *Runtime) skillUsageHintsFromAgent(agent *schema.AgentWithRuntime) strin
 	}
 	if _, ok := want[builtinSkillDockerOperator]; ok {
 		parts = append(parts, "- **Docker**: Use `builtin_docker_operator` for read-only Docker operations (ps, logs, inspect, stats). (Runs on client)")
+	}
+	if _, ok := want[builtinSkillTerminal]; ok {
+		if isIM {
+			// IMSkillUsageHints(true) already appended at top when isIM; avoid duplicate terminal line.
+		} else {
+			parts = append(parts, "- **Terminal**: Use `builtin_terminal` to execute shell commands on the server. **Any new or updated file** in the command working directory is auto-attached (any extension; max 1MB). Web chat shows download buttons via `/api/v1/chat/files/...`. In your final reply, write brief natural language only—do not paste file contents. Requires user approval for every invocation.")
+		}
 	}
 	if _, ok := want[builtinSkillDBQuery]; ok {
 		parts = append(parts, "- **Database**: Use `builtin_db_query` for read-only SQL queries (SELECT only) on MySQL/PostgreSQL.")
@@ -520,11 +604,56 @@ func (r *Runtime) skillUsageHintsFromAgent(agent *schema.AgentWithRuntime) strin
 	if _, ok := want[builtinSkillTransaction]; ok {
 		parts = append(parts, "- **Transaction analysis**: Use `builtin_transaction_analyzer` for Ethereum transaction details, receipts, gas analysis, costs, and token transfers.")
 	}
-	// Browser: one line whether the agent binds browser_client and/or legacy visible_browser (stub tool).
-	_, hasBrowserClient := want[builtinSkillBrowserClient]
-	_, hasVisibleBrowser := want[builtinSkillVisibleBrowser]
-	if hasBrowserClient || hasVisibleBrowser {
-		parts = append(parts, "- **Browser**: `builtin_browser` runs **only on the desktop client**: opens a **visible** Chrome/Chromium window (CDP: navigate, click, type, screenshot, page text for the model). It is **not** headless and **not** the same profile as the user’s everyday Chrome. Use `builtin_http_client` for **server-side** HTTP only.")
+	if _, ok := want[builtinSkillHelm]; ok {
+		parts = append(parts, "- **Helm**: Use `builtin_helm` to manage Helm charts and releases on Kubernetes: list repos, search charts, list releases, status, history, get values. Write ops (install/upgrade/rollback/uninstall) need user confirmation.")
+	}
+	if _, ok := want[builtinSkillAnsible]; ok {
+		parts = append(parts, "- **Ansible**: Use `builtin_ansible` for ad-hoc commands, playbook check/run, and inventory listing. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillKafka]; ok {
+		parts = append(parts, "- **Kafka**: Use `builtin_kafka` for read-only Kafka: list/describe topics, consumer groups, get messages, broker info. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillMongoDB]; ok {
+		parts = append(parts, "- **MongoDB**: Use `builtin_mongodb` for read-only MongoDB: list databases/collections, find documents, count, explain, stats, indexes. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillPulumi]; ok {
+		parts = append(parts, "- **Pulumi**: Use `builtin_pulumi` for read-only Pulumi: list stacks, preview, list resources, outputs, config, history. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillVault]; ok {
+		parts = append(parts, "- **Vault**: Use `builtin_vault` for read-only HashiCorp Vault: check status, list/read KV secrets, list auth methods, list/read policies.")
+	}
+	if _, ok := want[builtinSkillGitLab]; ok {
+		parts = append(parts, "- **GitLab**: Use `builtin_gitlab` for read-only GitLab API: list projects, get project, list MRs, list pipelines, get job logs, list branches/tags.")
+	}
+	if _, ok := want[builtinSkillSonarQube]; ok {
+		parts = append(parts, "- **SonarQube**: Use `builtin_sonarqube` for read-only code quality: list projects, metrics, issues, quality gate status.")
+	}
+	if _, ok := want[builtinSkillKustomize]; ok {
+		parts = append(parts, "- **Kustomize**: Use `builtin_kustomize` for Kustomize: build, list resources/overlays, show patches, edit image/namespace. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillIngress]; ok {
+		parts = append(parts, "- **Ingress**: Use `builtin_ingress` for read-only Kubernetes Ingress diagnostics: list, describe, check controller/TLS/endpoints. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillIstio]; ok {
+		parts = append(parts, "- **Istio**: Use `builtin_istio` for read-only Istio service mesh: list VirtualServices/DestinationRules/Gateways, describe, check sidecar status, analyze. (Runs on client)")
+	}
+	if _, ok := want[builtinSkillDatadog]; ok {
+		parts = append(parts, "- **Datadog**: Use `builtin_datadog` for read-only Datadog: list/get monitors, list dashboards, query metrics, list incidents/SLOs.")
+	}
+	if _, ok := want[builtinSkillPagerDuty]; ok {
+		parts = append(parts, "- **PagerDuty**: Use `builtin_pagerduty` for read-only PagerDuty: list/get incidents, list services, on-call schedules, escalation policies.")
+	}
+	if _, ok := want[builtinSkillOpenTelemetry]; ok {
+		parts = append(parts, "- **OpenTelemetry**: Use `builtin_opentelemetry` for read-only trace queries (Jaeger/Tempo): list services, list/search/get traces, list operations.")
+	}
+	if _, ok := want[builtinSkillHarbor]; ok {
+		parts = append(parts, "- **Harbor**: Use `builtin_harbor` for read-only Harbor registry: list projects/repos/artifacts, get artifact details, system info.")
+	}
+	if _, ok := want[builtinSkillBrowser]; ok {
+		parts = append(parts, "- **Browser**: Use `builtin_browser` for server-side headless Chrome automation: navigate, click, type, screenshot, extract page text/HTML, run JavaScript. Sessions are per task_id. Requires Chrome/Chromium on the server.")
+	}
+	if _, ok := want[builtinSkillPlaywright]; ok {
+		parts = append(parts, "- **Playwright E2E**: Use `builtin_playwright` to run Playwright end-to-end tests. Supports actions: `run` (execute tests), `install` (install browsers), `list` (list available tests), `report` (show latest report). Filter by test file with `files` param.")
 	}
 	if len(parts) == 0 {
 		return ""
@@ -734,4 +863,24 @@ func newBuiltinRunJavaScriptTool() tool.BaseTool {
 		}),
 	}
 	return toolutils.NewTool(ti, execBuiltinRunJavaScript)
+}
+
+func (r *Runtime) newBuiltinRunPythonTool() tool.BaseTool {
+	ti := &einoschema.ToolInfo{
+		Name: toolRunPython,
+		Desc: "Execute Python code in a secure sandbox (Docker/k8s/host). print() output is returned. Stops after 30s.",
+		ParamsOneOf: einoschema.NewParamsOneOfByParams(map[string]*einoschema.ParameterInfo{
+			"code": {Type: einoschema.String, Desc: "Python source code", Required: true},
+		}),
+	}
+	return toolutils.NewTool(ti, func(ctx context.Context, in map[string]any) (string, error) {
+		code, _ := in["code"].(string)
+		if code == "" {
+			return "", fmt.Errorf("code is required")
+		}
+		if r.codeExecutor == nil {
+			return "", fmt.Errorf("code executor not configured")
+		}
+		return r.codeExecutor(ctx, "python", code, nil)
+	})
 }

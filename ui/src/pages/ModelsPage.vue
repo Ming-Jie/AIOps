@@ -12,7 +12,7 @@
     <q-table
       flat
       bordered
-      class="radius-sm"
+      class="q-table--soft radius-md"
       :rows="rows"
       :columns="columns"
       row-key="id"
@@ -38,8 +38,8 @@
       </template>
     </q-table>
 
-    <q-dialog v-model="dialogOpen">
-      <q-card style="width: min(92vw, 520px); max-width: 92vw;">
+    <q-dialog v-model="dialogOpen" transition-show="scale" transition-hide="scale">
+      <q-card class="card-soft card-soft--bordered" style="width: min(92vw, 520px); max-width: 92vw; border-radius: var(--radius-xl, 18px) !important;">
         <q-card-section class="row items-center">
           <div class="text-h6">{{ editingId ? t('editModel') : t('createModel') }}</div>
           <q-space />

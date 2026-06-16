@@ -10,11 +10,15 @@ type Agent struct {
 	Category     string    `json:"category"`
 	IsBuiltin    bool      `json:"is_builtin"`
 	IsActive     bool      `json:"is_active"`
+	CreatedBy    int64     `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 	SkillIDs     []string  `json:"skill_ids,omitempty"`
 	MCPConfigIDs []int64   `json:"mcp_config_ids,omitempty"`
 	KBIDs        []int64   `json:"kb_ids,omitempty"`
+	ChatUserIDs  []int64   `json:"chat_user_ids,omitempty"`
+	CanChat      bool      `json:"can_chat"`
+	CanEdit      bool      `json:"can_edit"`
 }
 
 type AgentWithRuntime struct {
@@ -70,17 +74,23 @@ type IMConfig struct {
 	LarkRegion string `json:"lark_region,omitempty"`
 	// LarkOpenDomain is the Open Platform base URL, e.g. https://open.feishu.cn or https://open.larksuite.com
 	LarkOpenDomain string `json:"lark_open_domain,omitempty"`
-	// WsEnabled: when true (or nil legacy), server global Start() opens WebSocket on boot; false = register credentials only, manual Start per bot.
+	// WsEnabled: when true, server global Start() opens WebSocket on boot; false or unset = register credentials only, manual Start per bot.
 	WsEnabled *bool `json:"ws_enabled,omitempty"`
+	// QQAppID is the QQ Bot App ID from bot.q.qq.com.
+	QQAppID string `json:"qq_app_id,omitempty"`
+	// QQBotToken is the QQ Bot Token from bot.q.qq.com.
+	QQBotToken string `json:"qq_bot_token,omitempty"`
 }
 
-// LarkRegisterLongConnection returns whether the bot should auto-start WebSocket on server global Start().
-// The bot is still registered in the Lark in-memory pool when IM credentials are present; manual per-agent WS start is allowed regardless.
+// IMWsAutoStartEnabled returns whether an IM bot (lark / telegram / dingtalk / qq) should auto-start
+// WebSocket/polling on server global Start(). Unset or false = register only; manual start from /bots.
+func (c IMConfig) IMWsAutoStartEnabled() bool {
+	return c.WsEnabled != nil && *c.WsEnabled
+}
+
+// LarkRegisterLongConnection is an alias kept for backward compatibility.
 func (c IMConfig) LarkRegisterLongConnection() bool {
-	if c.WsEnabled == nil {
-		return true
-	}
-	return *c.WsEnabled
+	return c.IMWsAutoStartEnabled()
 }
 
 type ApprovalType string
@@ -133,6 +143,7 @@ type Skill struct {
 	ExecutionMode string    `json:"execution_mode"`
 	PromptHint    string    `json:"prompt_hint,omitempty"`
 	IsActive      bool      `json:"is_active"`
+	CreatedBy     int64     `json:"created_by"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at,omitempty"`
 }
@@ -159,6 +170,7 @@ type MCPConfig struct {
 	IsActive     bool           `json:"is_active"`
 	HealthStatus string         `json:"health_status"`
 	ToolCount    int            `json:"tool_count"`
+	CreatedBy    int64          `json:"created_by"`
 	CreatedAt    time.Time      `json:"created_at"`
 }
 
@@ -183,8 +195,7 @@ var DefaultSkillCategory = map[string]string{
 	"builtin_skill.file_parser":               SkillCategorySafe,
 	"builtin_skill.image_analyzer":            SkillCategorySafe,
 	"builtin_skill.terraform_plan":            SkillCategorySafe,
-	"builtin_skill.browser_client":            SkillCategoryReadRemote,
-	"builtin_skill.visible_browser":           SkillCategoryWrite,
+	"builtin_skill.browser":                   SkillCategoryReadRemote,
 	"builtin_skill.docker_operator":           SkillCategoryReadLocal,
 	"builtin_skill.git_operator":              SkillCategoryReadLocal,
 	"builtin_skill.system_monitor":            SkillCategoryReadLocal,
@@ -210,7 +221,8 @@ var DefaultSkillCategory = map[string]string{
 	"builtin_skill.github_issue":              SkillCategoryWrite,
 	"builtin_skill.search":                    SkillCategoryReadRemote,
 	"builtin_skill.calculator":                SkillCategorySafe,
-	"builtin_skill.code_interpreter":          SkillCategorySafe,
+	"builtin_skill.js_interpreter":            SkillCategorySafe,
+	"builtin_skill.python_interpreter":        SkillCategorySafe,
 	"builtin_skill.log_analyzer":              SkillCategorySafe,
 	"builtin_skill.mysql_explain":             SkillCategoryReadRemote,
 	"builtin_skill.cisco":                     SkillCategoryReadRemote,
@@ -228,6 +240,22 @@ var DefaultSkillCategory = map[string]string{
 	"builtin_skill.ethereum_query":            SkillCategoryReadRemote,
 	"builtin_skill.smart_contract":            SkillCategoryReadRemote,
 	"builtin_skill.transaction_analyzer":      SkillCategoryReadRemote,
+	"builtin_skill.helm":                      SkillCategoryWrite,
+	"builtin_skill.ansible":                   SkillCategoryWrite,
+	"builtin_skill.terminal":                  SkillCategoryWrite,
+	"builtin_skill.kafka":                     SkillCategoryReadLocal,
+	"builtin_skill.mongodb":                   SkillCategoryReadLocal,
+	"builtin_skill.pulumi":                    SkillCategoryReadLocal,
+	"builtin_skill.vault":                     SkillCategoryReadRemote,
+	"builtin_skill.gitlab":                    SkillCategoryReadRemote,
+	"builtin_skill.sonarqube":                 SkillCategoryReadRemote,
+	"builtin_skill.kustomize":                 SkillCategoryReadLocal,
+	"builtin_skill.ingress":                   SkillCategoryReadRemote,
+	"builtin_skill.istio":                     SkillCategoryReadRemote,
+	"builtin_skill.datadog":                   SkillCategoryReadRemote,
+	"builtin_skill.pagerduty":                 SkillCategoryReadRemote,
+	"builtin_skill.opentelemetry":             SkillCategoryReadRemote,
+	"builtin_skill.harbor":                    SkillCategoryReadRemote,
 }
 
 var DefaultSkillRiskLevel = map[string]string{
@@ -238,8 +266,7 @@ var DefaultSkillRiskLevel = map[string]string{
 	"builtin_skill.file_parser":               RiskLevelLow,
 	"builtin_skill.image_analyzer":            RiskLevelLow,
 	"builtin_skill.terraform_plan":            RiskLevelLow,
-	"builtin_skill.browser_client":            RiskLevelLow,
-	"builtin_skill.visible_browser":           RiskLevelLow,
+	"builtin_skill.browser":                   RiskLevelLow,
 	"builtin_skill.docker_operator":           RiskLevelLow,
 	"builtin_skill.git_operator":              RiskLevelLow,
 	"builtin_skill.system_monitor":            RiskLevelLow,
@@ -265,7 +292,8 @@ var DefaultSkillRiskLevel = map[string]string{
 	"builtin_skill.github_issue":              RiskLevelLow,
 	"builtin_skill.search":                    RiskLevelLow,
 	"builtin_skill.calculator":                RiskLevelLow,
-	"builtin_skill.code_interpreter":          RiskLevelLow,
+	"builtin_skill.js_interpreter":            RiskLevelLow,
+	"builtin_skill.python_interpreter":        RiskLevelLow,
 	"builtin_skill.log_analyzer":              RiskLevelLow,
 	"builtin_skill.mysql_explain":             RiskLevelLow,
 	"builtin_skill.cisco":                     RiskLevelLow,
@@ -283,6 +311,22 @@ var DefaultSkillRiskLevel = map[string]string{
 	"builtin_skill.ethereum_query":            RiskLevelLow,
 	"builtin_skill.smart_contract":            RiskLevelLow,
 	"builtin_skill.transaction_analyzer":      RiskLevelLow,
+	"builtin_skill.helm":                      RiskLevelMedium,
+	"builtin_skill.ansible":                   RiskLevelMedium,
+	"builtin_skill.terminal":                  RiskLevelHigh,
+	"builtin_skill.kafka":                     RiskLevelLow,
+	"builtin_skill.mongodb":                   RiskLevelLow,
+	"builtin_skill.pulumi":                    RiskLevelLow,
+	"builtin_skill.vault":                     RiskLevelLow,
+	"builtin_skill.gitlab":                    RiskLevelLow,
+	"builtin_skill.sonarqube":                 RiskLevelLow,
+	"builtin_skill.kustomize":                 RiskLevelLow,
+	"builtin_skill.ingress":                   RiskLevelLow,
+	"builtin_skill.istio":                     RiskLevelLow,
+	"builtin_skill.datadog":                   RiskLevelLow,
+	"builtin_skill.pagerduty":                 RiskLevelLow,
+	"builtin_skill.opentelemetry":             RiskLevelLow,
+	"builtin_skill.harbor":                    RiskLevelLow,
 }
 
 type MCPServer struct {

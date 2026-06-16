@@ -74,6 +74,15 @@ func (c *AgentController) unregisterIMBotIfNeeded(agentID int64) {
 	c.imManager.UnregisterAgent(agentID)
 }
 
+func (c *AgentController) isChatUser(chatUserIDs []int64, userID int64) bool {
+	for _, id := range chatUserIDs {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *AgentController) GetAgentByID(id int64) (*schema.AgentWithRuntime, error) {
 	return c.agentService.GetAgent(id)
 }
@@ -189,6 +198,42 @@ func (c *AgentController) UnregisterDingtalkBotForAgent(agentID int64) {
 	c.unregisterIMBotIfNeeded(agentID)
 }
 
+func (c *AgentController) RegisterQQBotForAgent(agent *schema.AgentWithRuntime) {
+	c.registerIMBotIfNeeded(agent)
+}
+
+func (c *AgentController) SetQQIMWsEnabled(agentID int64, enabled bool) error {
+	full, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if full == nil || full.RuntimeProfile == nil {
+		return errors.New("agent runtime profile missing")
+	}
+	if full.RuntimeProfile.IMEnabled != "qq" {
+		return errors.New("agent im is not qq")
+	}
+	v := enabled
+	full.RuntimeProfile.IMConfig.WsEnabled = &v
+	if _, err := c.agentService.UpdateAgent(agentID, &schema.UpdateAgentRequest{
+		RuntimeProfile: full.RuntimeProfile,
+	}); err != nil {
+		return err
+	}
+	updated, err := c.agentService.GetAgent(agentID)
+	if err != nil {
+		return err
+	}
+	if updated != nil {
+		c.registerIMBotIfNeeded(updated)
+	}
+	return nil
+}
+
+func (c *AgentController) UnregisterQQBotForAgent(agentID int64) {
+	c.unregisterIMBotIfNeeded(agentID)
+}
+
 func (c *AgentController) getUserForMiddleware(userID int64) (*auth.User, error) {
 	if c.userStore == nil {
 		return nil, errors.New("user store not configured")
@@ -241,26 +286,18 @@ func (c *AgentController) ListAgents(ctx context.Context, hc *app.RequestContext
 		return
 	}
 
-	if c.rbacService != nil {
-		user := auth.GetCurrentUser(hc)
+	user := auth.GetCurrentUser(hc)
+	result := make([]schema.Agent, len(agents))
+	for i, a := range agents {
+		ag := *a
 		if user != nil {
-			var filtered []schema.Agent
-			for _, a := range agents {
-				if c.rbacService.CheckAgentAccess(ctx, user.ID, a.Name, user.IsAdmin) {
-					filtered = append(filtered, *a)
-				}
-			}
-			hc.JSON(http.StatusOK, schema.SuccessResponse(filtered))
-			return
+			ag.CanEdit = user.IsAdmin || ag.CreatedBy == user.ID
+			ag.CanChat = ag.CanEdit || c.isChatUser(ag.ChatUserIDs, user.ID)
 		}
-		// No JWT user in context: hide catalog when we can authenticate (DB + optional middleware); otherwise keep legacy behavior (in-memory dev without user store).
-		if c.userStore != nil {
-			hc.JSON(http.StatusOK, schema.SuccessResponse([]schema.Agent{}))
-			return
-		}
+		result[i] = ag
 	}
 
-	hc.JSON(http.StatusOK, schema.SuccessResponse(agents))
+	hc.JSON(http.StatusOK, schema.SuccessResponse(result))
 }
 
 // @Summary List all agents (admin only, no RBAC filter)
@@ -325,17 +362,22 @@ func (c *AgentController) GetAgent(ctx context.Context, hc *app.RequestContext) 
 		return
 	}
 
-	if c.rbacService != nil && c.userStore != nil {
-		user := auth.GetCurrentUser(hc)
-		if user == nil {
-			hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
-			return
-		}
-		if !c.rbacService.CheckAgentAccess(ctx, user.ID, agent.Name, user.IsAdmin) {
-			hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
-			return
-		}
+	user := auth.GetCurrentUser(hc)
+	if user == nil {
+		hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
+		return
 	}
+
+	// 只有创建者、可对话用户、管理员能看到完整 RuntimeProfile（含 LLM 配置、IM token 等敏感信息）
+	canViewDetail := user.IsAdmin || agent.CreatedBy == user.ID || c.isChatUser(agent.ChatUserIDs, user.ID)
+
+	if !canViewDetail {
+		// 其他人只看基本信息，隐藏运行时敏感配置
+		agent.RuntimeProfile = nil
+	}
+
+	agent.CanEdit = user.IsAdmin || agent.CreatedBy == user.ID
+	agent.CanChat = agent.CanEdit || c.isChatUser(agent.ChatUserIDs, user.ID)
 
 	hc.JSON(http.StatusOK, schema.SuccessResponse(agent))
 }
@@ -357,7 +399,12 @@ func (c *AgentController) CreateAgent(ctx context.Context, hc *app.RequestContex
 		return
 	}
 
-	agent, err := c.agentService.CreateAgent(&req)
+	createdBy := int64(0)
+	if user := auth.GetCurrentUser(hc); user != nil {
+		createdBy = user.ID
+	}
+
+	agent, err := c.agentService.CreateAgent(&req, createdBy)
 	if err != nil {
 		hc.JSON(http.StatusInternalServerError, schema.ErrorResponse(err.Error()))
 		return
@@ -368,6 +415,9 @@ func (c *AgentController) CreateAgent(ctx context.Context, hc *app.RequestContex
 		c.runtime.RegisterAgent(fullAgent)
 		c.registerLarkBotIfNeeded(fullAgent)
 	}
+
+	// 补齐 chat_user_ids 返回
+	agent.ChatUserIDs = req.ChatUserIDs
 
 	hc.JSON(http.StatusCreated, schema.SuccessResponse(agent))
 }
@@ -384,10 +434,31 @@ func (c *AgentController) CreateAgent(ctx context.Context, hc *app.RequestContex
 // @Failure 404 {object} schema.APIResponse
 // @Failure 500 {object} schema.APIResponse
 // @Router /agents/{id} [put]
+func (c *AgentController) checkAgentOwner(ctx context.Context, hc *app.RequestContext, agentID int64) bool {
+	user := auth.GetCurrentUser(hc)
+	if user == nil || user.IsAdmin {
+		return true
+	}
+	ownerID, err := c.agentService.GetAgentOwner(agentID)
+	if err != nil {
+		hc.JSON(http.StatusNotFound, schema.ErrorResponse("agent not found"))
+		return false
+	}
+	if ownerID != user.ID {
+		hc.JSON(http.StatusForbidden, schema.ErrorResponse("you do not have permission to modify this agent"))
+		return false
+	}
+	return true
+}
+
 func (c *AgentController) UpdateAgent(ctx context.Context, hc *app.RequestContext) {
 	id := parseInt64Param(hc, "id")
 	if id == 0 {
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("invalid agent id"))
+		return
+	}
+
+	if !c.checkAgentOwner(ctx, hc, id) {
 		return
 	}
 
@@ -396,6 +467,8 @@ func (c *AgentController) UpdateAgent(ctx context.Context, hc *app.RequestContex
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse(err.Error()))
 		return
 	}
+
+	oldAgent, _ := c.agentService.GetAgent(id)
 
 	agent, err := c.agentService.UpdateAgent(id, &req)
 	if err != nil {
@@ -410,7 +483,9 @@ func (c *AgentController) UpdateAgent(ctx context.Context, hc *app.RequestContex
 	fullAgent, _ := c.agentService.GetAgent(id)
 	if fullAgent != nil {
 		c.runtime.RegisterAgent(fullAgent)
-		c.registerLarkBotIfNeeded(fullAgent)
+		if imConfigChanged(oldAgent, fullAgent) {
+			c.registerLarkBotIfNeeded(fullAgent)
+		}
 	}
 
 	hc.JSON(http.StatusOK, schema.SuccessResponse(agent))
@@ -430,6 +505,10 @@ func (c *AgentController) DeleteAgent(ctx context.Context, hc *app.RequestContex
 	id := parseInt64Param(hc, "id")
 	if id == 0 {
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse("invalid agent id"))
+		return
+	}
+
+	if !c.checkAgentOwner(ctx, hc, id) {
 		return
 	}
 
@@ -527,6 +606,112 @@ func (c *AgentController) GetCapabilities(ctx context.Context, hc *app.RequestCo
 
 	capabilities := c.chatService.GetCapabilities(id)
 	hc.JSON(http.StatusOK, schema.SuccessResponse(capabilities))
+}
+
+// imConfigChanged returns true when the IM-related configuration differs between old and new agent.
+// Only when IM fields change should we trigger IM bot re-registration on agent update.
+func imConfigChanged(old, new *schema.AgentWithRuntime) bool {
+	if old == nil && new == nil {
+		return false
+	}
+	if old == nil || new == nil {
+		return true
+	}
+	var (
+		oldProfile, newProfile *schema.RuntimeProfile
+	)
+	if old.RuntimeProfile != nil {
+		oldProfile = old.RuntimeProfile
+	}
+	if new.RuntimeProfile != nil {
+		newProfile = new.RuntimeProfile
+	}
+	if (oldProfile == nil) != (newProfile == nil) {
+		return true
+	}
+	if oldProfile == nil {
+		return false
+	}
+	if oldProfile.IMEnabled != newProfile.IMEnabled {
+		return true
+	}
+	return !imConfigEqual(oldProfile.IMConfig, newProfile.IMConfig)
+}
+
+// imConfigEqual compares two IMConfig structs, normalising nil/empty slices and nil/false pointers
+// to avoid false positives caused by JSON round-trip differences.
+func imConfigEqual(a, b schema.IMConfig) bool {
+	if a.AppID != b.AppID {
+		return false
+	}
+	if a.AppSecret != b.AppSecret {
+		return false
+	}
+	if a.TelegramToken != b.TelegramToken {
+		return false
+	}
+	if a.TelegramChatID != b.TelegramChatID {
+		return false
+	}
+	if a.WebhookURL != b.WebhookURL {
+		return false
+	}
+	if a.Secret != b.Secret {
+		return false
+	}
+	if a.BotName != b.BotName {
+		return false
+	}
+	if a.AutoReply != b.AutoReply {
+		return false
+	}
+	if a.NotifyOnApproval != b.NotifyOnApproval {
+		return false
+	}
+	if a.LarkRegion != b.LarkRegion {
+		return false
+	}
+	if a.LarkOpenDomain != b.LarkOpenDomain {
+		return false
+	}
+	if a.QQAppID != b.QQAppID {
+		return false
+	}
+	if a.QQBotToken != b.QQBotToken {
+		return false
+	}
+	if !ptrBoolEqual(a.WsEnabled, b.WsEnabled) {
+		return false
+	}
+	return strSliceEqual(a.AllowedUsers, b.AllowedUsers)
+}
+
+func ptrBoolEqual(a, b *bool) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil {
+		return !*b
+	}
+	if b == nil {
+		return !*a
+	}
+	return *a == *b
+}
+
+func strSliceEqual(a, b []string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 var globalAgentController *AgentController

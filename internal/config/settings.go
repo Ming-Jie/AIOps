@@ -87,6 +87,14 @@ type Settings struct {
 	OpenVikingEnabled bool   // OPENVIKING_ENABLED, default false
 	OpenVikingURL     string // OPENVIKING_URL, default http://127.0.0.1:1933
 	OpenVikingAPIKey  string // OPENVIKING_API_KEY (identifies the caller; sent as X-API-Key / Bearer)
+
+	// IMTypes controls which IM platforms are enabled. Comma-separated: lark,dingtalk,telegram,qq.
+	// Empty string means all supported IM types are enabled. Example: "lark,dingtalk" enables only Lark and DingTalk.
+	IMTypes string // IM_TYPES, default ""
+
+	// CORSAllowedOrigins is a comma-separated list of allowed origins for CORS.
+	// "*" or empty allows all origins (not recommended for production).
+	CORSAllowedOrigins string // CORS_ALLOWED_ORIGINS, default "*"
 }
 
 func Load() *Settings {
@@ -138,9 +146,11 @@ func Load() *Settings {
 		SandboxMemoryLimitMB:   getEnvInt("SANDBOX_MEMORY_LIMIT_MB", 256),
 		SandboxCPUPercent:      getEnvInt("SANDBOX_CPU_PERCENT", 50),
 
-		OpenVikingEnabled: getEnvBool("OPENVIKING_ENABLED", false),
-		OpenVikingURL:     getEnv("OPENVIKING_URL", "http://127.0.0.1:1933"),
-		OpenVikingAPIKey:  getEnv("OPENVIKING_API_KEY", ""),
+		OpenVikingEnabled:     getEnvBool("OPENVIKING_ENABLED", false),
+		OpenVikingURL:         getEnv("OPENVIKING_URL", "http://127.0.0.1:1933"),
+		OpenVikingAPIKey:      getEnv("OPENVIKING_API_KEY", ""),
+		IMTypes:               getEnv("IM_TYPES", ""),
+		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
 	}
 }
 

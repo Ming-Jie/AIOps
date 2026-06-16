@@ -47,8 +47,7 @@ func enrichSkillMetadata(sk *schema.Skill) {
 // If skills.execution_mode is set in the database, that value is authoritative at runtime (see agent.getToolExecutionModeFromTools).
 func defaultSkillExecutionMode(skillKey string) string {
 	switch skillKey {
-	case "builtin_skill.browser_client", "builtin_skill.visible_browser",
-		"builtin_skill.test_runner":
+	case "builtin_skill.test_runner":
 		return schema.ExecutionModeClient
 	case "builtin_skill.docker_operator", "builtin_skill.git_operator", "builtin_skill.file_parser",
 		"builtin_skill.system_monitor", "builtin_skill.cron_manager", "builtin_skill.network_tools",
@@ -96,8 +95,8 @@ func (s *SkillService) GetSkill(id int64, skillsDir ...string) (*schema.Skill, e
 	return sk, nil
 }
 
-func (s *SkillService) CreateSkill(req *schema.CreateSkillRequest) (*schema.Skill, error) {
-	sk, err := s.store.CreateSkill(req)
+func (s *SkillService) CreateSkill(req *schema.CreateSkillRequest, createdBy int64) (*schema.Skill, error) {
+	sk, err := s.store.CreateSkill(req, createdBy)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +182,7 @@ func (s *SkillService) SyncBuiltinSkills(registry *skills.Registry, skillsDir st
 			Content:     content,
 			SourceRef:   def.SourceRef,
 		}
-		skill, err := s.store.CreateSkill(req)
+		skill, err := s.store.CreateSkill(req, 0)
 		if err != nil {
 			// Unique violation: row exists but was not visible in have (e.g. old ListSkills failed on NULL scans).
 			var pe *pgconn.PgError

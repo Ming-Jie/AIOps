@@ -69,6 +69,11 @@ func (s *DockerSandbox) executeWithDocker(ctx context.Context, language, code st
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("docker sandbox pull panicked", "recover", r)
+			}
+		}()
 		if out, err := exec.Command("docker", "pull", "-q", imageName).CombinedOutput(); err != nil {
 			logger.Debug("docker sandbox: background pull finished with error", "image", imageName, "err", err.Error(), "output", string(bytes.TrimSpace(out)))
 		} else {

@@ -41,12 +41,13 @@ func flushSSEBytes(hc *app.RequestContext, p []byte) {
 }
 
 type ChatController struct {
-	chatService *service.ChatService
-	imHistory   *service.IMHistoryService
-	jwtCfg      auth.JWTConfig
-	userStore   storage.UserStore
-	rbacService *service.RBACService
-	uploadDir   string
+	chatService  *service.ChatService
+	agentService *service.AgentService
+	imHistory    *service.IMHistoryService
+	jwtCfg       auth.JWTConfig
+	userStore    storage.UserStore
+	rbacService  *service.RBACService
+	uploadDir    string
 }
 
 func NewChatController(chatService *service.ChatService, jwtCfg auth.JWTConfig, userStore storage.UserStore, uploadDir string, rbacService ...*service.RBACService) *ChatController {
@@ -55,6 +56,10 @@ func NewChatController(chatService *service.ChatService, jwtCfg auth.JWTConfig, 
 		ctrl.rbacService = rbacService[0]
 	}
 	return ctrl
+}
+
+func (c *ChatController) SetAgentService(svc *service.AgentService) {
+	c.agentService = svc
 }
 
 func (c *ChatController) SetIMHistoryService(svc *service.IMHistoryService) {
@@ -119,15 +124,27 @@ func (c *ChatController) checkAgentAccess(ctx context.Context, hc *app.RequestCo
 	if user == nil {
 		return false
 	}
-	if c.rbacService == nil {
-		return user.IsAdmin
+	// 管理员有所有权限
+	if user.IsAdmin {
+		return true
 	}
-	agent, err := c.chatService.GetAgent(ctx, agentID)
-	if err != nil || agent == nil {
-		logger.Warn("agent not found for access check", "agent_id", agentID)
-		return false
+	// 检查创建者和 chat_users
+	if c.agentService != nil {
+		canChat, err := c.agentService.CanChat(ctx, agentID, user.ID)
+		if err == nil && canChat {
+			return true
+		}
 	}
-	return c.rbacService.CheckAgentAccess(ctx, user.ID, agent.Name, user.IsAdmin)
+	// 检查 RBAC 权限
+	if c.rbacService != nil {
+		agent, err := c.chatService.GetAgent(ctx, agentID)
+		if err != nil || agent == nil {
+			logger.Warn("agent not found for rbac access check", "agent_id", agentID)
+			return false
+		}
+		return c.rbacService.CheckAgentAccess(ctx, user.ID, agent.Name, user.IsAdmin)
+	}
+	return false
 }
 
 func (c *ChatController) canAccessSession(ctx context.Context, hc *app.RequestContext, sess *schema.ChatSession) bool {
@@ -355,7 +372,7 @@ func (c *ChatController) ListSessions(ctx context.Context, hc *app.RequestContex
 	if offset < 0 {
 		offset = 0
 	}
-	if c.rbacService != nil && !c.checkAgentAccess(ctx, hc, agentID) {
+	if !c.checkAgentAccess(ctx, hc, agentID) {
 		hc.JSON(http.StatusForbidden, schema.ErrorResponse("no permission to use this agent"))
 		return
 	}
@@ -397,6 +414,10 @@ func (c *ChatController) CreateSession(ctx context.Context, hc *app.RequestConte
 	var req schema.CreateChatSessionRequest
 	if err := hc.BindAndValidate(&req); err != nil {
 		hc.JSON(http.StatusBadRequest, schema.ErrorResponse(err.Error()))
+		return
+	}
+	if !c.checkAgentAccess(ctx, hc, req.AgentID) {
+		hc.JSON(http.StatusForbidden, schema.ErrorResponse("no permission to use this agent"))
 		return
 	}
 	uid := strconv.FormatInt(user.ID, 10)
@@ -467,7 +488,7 @@ func (c *ChatController) Chat(ctx context.Context, hc *app.RequestContext) {
 		logger.Info("client_type reconciled from User-Agent", "from", beforeCT, "to", req.ClientType, "ua_len", len(ua))
 	}
 
-	if c.rbacService != nil && !c.checkAgentAccess(ctx, hc, req.AgentID) {
+	if !c.checkAgentAccess(ctx, hc, req.AgentID) {
 		hc.JSON(http.StatusForbidden, schema.ErrorResponse("no permission to use this agent"))
 		return
 	}
@@ -528,7 +549,7 @@ func (c *ChatController) StreamChat(ctx context.Context, hc *app.RequestContext)
 		logger.Info("client_type reconciled from User-Agent", "from", beforeCT, "to", req.ClientType, "ua_len", len(ua))
 	}
 
-	if c.rbacService != nil && !c.checkAgentAccess(ctx, hc, req.AgentID) {
+	if !c.checkAgentAccess(ctx, hc, req.AgentID) {
 		hc.JSON(http.StatusForbidden, schema.ErrorResponse("no permission to use this agent"))
 		return
 	}

@@ -31,6 +31,10 @@ func (s *MessageService) CreateChannel(req *schema.CreateMessageChannelRequest) 
 	return s.router.CreateChannel(req)
 }
 
+func (s *MessageService) GetChannel(id int64) (*schema.MessageChannel, error) {
+	return s.router.GetChannel(id)
+}
+
 func (s *MessageService) ListChannels(agentID int64) ([]*schema.MessageChannel, error) {
 	return s.router.ListChannels(agentID)
 }
@@ -53,6 +57,10 @@ func (s *MessageService) ListA2ACards(agentID int64) ([]*schema.A2ACard, error) 
 
 func (s *MessageService) GetA2ACard(id int64) (*schema.A2ACard, error) {
 	return s.router.GetA2ACard(id)
+}
+
+func (s *MessageService) UpdateA2ACard(id int64, req *schema.UpdateA2ACardRequest) (*schema.A2ACard, error) {
+	return s.router.UpdateA2ACard(id, req)
 }
 
 func (s *MessageService) DeleteA2ACard(id int64) error {

@@ -12,6 +12,8 @@
       row-key="id"
       :loading="loading"
       flat
+      bordered
+      class="q-table--soft radius-md"
     >
       <template #body-cell-name="props">
         <q-td :props="props">

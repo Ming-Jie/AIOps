@@ -27,6 +27,11 @@ func (a *AuditLogger) Log(ctx context.Context, log *model.AuditLog) {
 		return
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("audit_logger: create panic", "recover", r)
+			}
+		}()
 		if _, err := a.store.CreateAuditLog(log); err != nil {
 			logger.Error("failed to create audit log", "err", err)
 		}

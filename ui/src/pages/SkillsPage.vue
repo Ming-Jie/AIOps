@@ -46,7 +46,7 @@
       :filter="search"
       flat
       bordered
-      class="radius-sm skill-table-wrap"
+      class="radius-md q-table--soft skill-table-wrap"
       dense
       wrap-cells
       :rows="rows"
@@ -96,6 +96,17 @@
       <template #body-cell-description="props">
         <q-td :props="props" class="skill-table-col-desc">
           <div class="skill-desc-cell">{{ props.row.description }}</div>
+        </q-td>
+      </template>
+      <template #body-cell-created_by="props">
+        <q-td :props="props">
+          <q-badge
+            v-if="props.row.created_by === 0"
+            color="grey-7"
+            outline
+            :label="t('system')"
+          />
+          <span v-else class="text-body2">{{ props.row.created_by }}</span>
         </q-td>
       </template>
       <template #body-cell-is_active="props">

@@ -3,34 +3,34 @@
     <div class="text-h5 q-mb-md">{{ t('dashboard') }}</div>
 
     <div class="row q-gutter-md q-mb-md">
-      <q-card class="col" flat bordered>
+      <q-card class="col stat-card card-soft card-soft--hover-lift card-accent-top">
         <q-card-section>
-          <div class="text-subtitle2 text-grey">{{ t('totalChats') }}</div>
-          <div class="text-h4">{{ stats.total_chats }}</div>
+          <div class="stat-card-label text-subtitle2">{{ t('totalChats') }}</div>
+          <div class="stat-card-value text-h4">{{ stats.total_chats }}</div>
         </q-card-section>
       </q-card>
-      <q-card class="col" flat bordered>
+      <q-card class="col stat-card card-soft card-soft--hover-lift card-accent-top">
         <q-card-section>
-          <div class="text-subtitle2 text-grey">{{ t('totalSessions') }}</div>
-          <div class="text-h4">{{ stats.total_sessions }}</div>
+          <div class="stat-card-label text-subtitle2">{{ t('totalSessions') }}</div>
+          <div class="stat-card-value text-h4">{{ stats.total_sessions }}</div>
         </q-card-section>
       </q-card>
-      <q-card class="col" flat bordered>
+      <q-card class="col stat-card card-soft card-soft--hover-lift card-accent-top">
         <q-card-section>
-          <div class="text-subtitle2 text-grey">{{ t('totalMessages') }}</div>
-          <div class="text-h4">{{ stats.total_messages }}</div>
+          <div class="stat-card-label text-subtitle2">{{ t('totalMessages') }}</div>
+          <div class="stat-card-value text-h4">{{ stats.total_messages }}</div>
         </q-card-section>
       </q-card>
-      <q-card class="col" flat bordered>
+      <q-card class="col stat-card card-soft card-soft--hover-lift card-accent-top">
         <q-card-section>
-          <div class="text-subtitle2 text-grey">{{ t('totalAgents') }}</div>
-          <div class="text-h4">{{ stats.total_agents }}</div>
+          <div class="stat-card-label text-subtitle2">{{ t('totalAgents') }}</div>
+          <div class="stat-card-value text-h4">{{ stats.total_agents }}</div>
         </q-card-section>
       </q-card>
     </div>
 
     <div class="row q-gutter-md q-mb-md">
-      <q-card class="col-12" flat bordered>
+      <q-card class="col-12 card-soft card-accent-top">
         <q-card-section>
           <div class="text-h6">{{ t('chatActivity') }}</div>
         </q-card-section>
@@ -48,8 +48,8 @@
             >
               <defs>
                 <linearGradient id="dashboard-activity-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#1976d2" stop-opacity="0.22" />
-                  <stop offset="100%" stop-color="#1976d2" stop-opacity="0.02" />
+                  <stop offset="0%" stop-color="#6366f1" stop-opacity="0.22" />
+                  <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.02" />
                 </linearGradient>
               </defs>
               <polygon
@@ -59,13 +59,19 @@
               />
               <polyline
                 fill="none"
-                stroke="#1976d2"
+                stroke="url(#dashboard-activity-line-grad)"
                 stroke-width="3"
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 vector-effect="non-scaling-stroke"
                 :points="activityLinePoints"
               />
+              <defs>
+                <linearGradient id="dashboard-activity-line-grad" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#6366f1" />
+                  <stop offset="100%" stop-color="#06b6d4" />
+                </linearGradient>
+              </defs>
               <circle
                 v-for="(pt, idx) in activityLineDots"
                 :key="'dot-' + idx"
@@ -73,7 +79,7 @@
                 :cy="pt.cy"
                 r="5"
                 fill="#fff"
-                stroke="#1976d2"
+                stroke="#6366f1"
                 stroke-width="2"
               />
             </svg>
@@ -81,7 +87,7 @@
               <div
                 v-for="item in activityData"
                 :key="'lbl-' + item.date"
-                class="col text-caption text-center text-grey-7"
+                class="col text-caption text-center text-text3"
               >
                 {{ item.date }}
               </div>
@@ -93,22 +99,22 @@
 
     <div class="row q-col-gutter-md">
       <div class="col-12 col-md-6">
-        <q-card flat bordered class="full-height">
+        <q-card class="full-height card-soft card-accent-top">
           <q-card-section class="q-pb-sm">
             <div class="text-h6">{{ t('recentChats') }}</div>
-            <div class="text-caption text-grey-7 q-mt-xs">{{ t('recentChatsHint') }}</div>
+            <div class="text-caption text-text3 q-mt-xs">{{ t('recentChatsHint') }}</div>
           </q-card-section>
           <q-separator />
           <q-card-section class="q-pa-none">
             <q-scroll-area class="dashboard-recent-scroll">
-              <q-list separator class="q-py-sm">
+              <q-list class="q-py-sm">
                 <q-item
                   v-for="chat in recentChats"
                   :key="chat.session_id"
                   class="dashboard-recent-item"
                 >
                   <q-item-section avatar class="cursor-pointer dashboard-recent-avatar" @click="goChat(chat)">
-                    <q-icon name="history" color="primary" size="sm" />
+                    <q-icon name="history" color="ai-primary" size="sm" />
                   </q-item-section>
                   <q-item-section class="cursor-pointer dashboard-recent-main" @click="goChat(chat)">
                     <q-item-label lines="1" class="ellipsis">
@@ -161,15 +167,15 @@
         </q-card>
       </div>
       <div class="col-12 col-md-6">
-        <q-card flat bordered class="full-height">
+        <q-card class="full-height card-soft card-accent-top">
           <q-card-section class="q-pb-sm">
             <div class="text-h6">{{ t('dashboardAccessibleAgents') }}</div>
-            <div class="text-caption text-grey-7 q-mt-xs">{{ t('dashboardAccessibleAgentsHint') }}</div>
+            <div class="text-caption text-text3 q-mt-xs">{{ t('dashboardAccessibleAgentsHint') }}</div>
           </q-card-section>
           <q-separator />
           <q-card-section class="q-pa-none">
             <q-scroll-area class="dashboard-recent-scroll">
-              <q-list separator class="q-py-sm">
+              <q-list class="q-py-sm">
                 <q-item
                   v-for="a in allowedAgents"
                   :key="a.id"
@@ -178,7 +184,7 @@
                   @click="goChatAgent(a)"
                 >
                   <q-item-section avatar>
-                    <q-icon name="smart_toy" color="secondary" />
+                    <q-icon name="smart_toy" color="ai-accent" />
                   </q-item-section>
                   <q-item-section>
                     <q-item-label>{{ a.name }}</q-item-label>
@@ -409,6 +415,32 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  border-radius: 0 2px 2px 0;
+}
+.stat-card:nth-child(1)::before { background: linear-gradient(180deg, #6366f1, #818cf8); }
+.stat-card:nth-child(2)::before { background: linear-gradient(180deg, #06b6d4, #22d3ee); }
+.stat-card:nth-child(3)::before { background: linear-gradient(180deg, #a855f7, #c084fc); }
+.stat-card:nth-child(4)::before { background: linear-gradient(180deg, #f59e0b, #fbbf24); }
+.stat-card-label {
+  color: var(--color-text-muted, #8a8a96);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.stat-card-value {
+  font-weight: 700;
+  margin-top: 4px;
+}
 .dashboard-recent-main {
   min-width: 0;
 }

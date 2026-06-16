@@ -14,7 +14,9 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/imoutbound"
 	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/skills"
 )
 
 const (
@@ -157,13 +159,19 @@ func countStandaloneHorizontalRules(s string) int {
 	return n
 }
 
-// polishReActUserVisibleText prefers the report below ---; drops reflection-only blocks when possible.
-func polishReActUserVisibleText(s string) string {
+// polishUserVisibleText normalizes assistant text for the active channel.
+// Web: strip IM markers/tool echoes from streamed or persisted chat text.
+// IM: keep LLM prose here; Lark/DingTalk bots apply imoutbound.SanitizeIMReplyText and send files separately.
+func polishUserVisibleText(ctx context.Context, s string) string {
 	s = strings.TrimSpace(s)
 	if after := extractAfterLastHorizontalRule(s); after != "" {
-		return after
+		s = after
 	}
-	return s
+	s = strings.TrimSpace(s)
+	if _, ok := imoutbound.ScopeFromContext(ctx); ok {
+		return s
+	}
+	return skills.SanitizeWebAssistantText(s)
 }
 
 // PolishReActUserVisibleTextForNotify normalizes ReAct text for Lark/DingTalk: prefer content after the *first* "---"
@@ -179,25 +187,25 @@ func PolishReActUserVisibleTextForNotify(s string) string {
 	}
 	beforeFirst, afterFirst, ok := splitOnFirstHorizontalRule(s)
 	if !ok {
-		return polishReActUserVisibleText(s)
+		return imoutbound.SanitizeNotifyText(polishUserVisibleText(context.Background(), s))
 	}
 	trimmed := strings.TrimSpace(afterFirst)
 	if trimmed == "" {
-		return polishReActUserVisibleText(s)
+		return imoutbound.SanitizeNotifyText(polishUserVisibleText(context.Background(), s))
 	}
 
 	before := strings.TrimSpace(beforeFirst)
 	// English reflection (or short preamble like "Thought") above first --- → keep body below.
 	if before != "" && isReflectionStyleAssistantText(before) {
-		return trimmed
+		return imoutbound.SanitizeNotifyText(trimmed)
 	}
 	if before != "" && !strings.Contains(before, "##") && utf8.RuneCountInString(before) < 2000 {
-		return trimmed
+		return imoutbound.SanitizeNotifyText(trimmed)
 	}
 
 	rules := countStandaloneHorizontalRules(s)
 	if rules >= 2 {
-		return trimmed
+		return imoutbound.SanitizeNotifyText(trimmed)
 	}
 
 	// Single --- after a section that already has markdown headings: treat as in-report separator, not reflection|report.
@@ -205,12 +213,12 @@ func PolishReActUserVisibleTextForNotify(s string) string {
 	// If the second section looks like the main conclusion (contains 结论/总结/结果), it's the reflection|report pattern.
 	if rules == 1 && strings.HasPrefix(before, "##") && strings.HasPrefix(trimmed, "##") {
 		if looksLikeConclusion(trimmed) {
-			return trimmed
+			return imoutbound.SanitizeNotifyText(trimmed)
 		}
-		return s
+		return imoutbound.SanitizeNotifyText(s)
 	}
 
-	return trimmed
+	return imoutbound.SanitizeNotifyText(trimmed)
 }
 
 // lastNonToolAssistantContent returns the latest assistant message that is not a tool-call envelope
@@ -240,14 +248,14 @@ func lastNonToolAssistantContent(msgs []*einoschema.Message) string {
 }
 
 // lastToolResultContent returns the latest non-empty tool message (e.g. ReAct final answer only in tool output).
-func lastToolResultContent(msgs []*einoschema.Message) string {
+func lastToolResultContent(ctx context.Context, msgs []*einoschema.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		m := msgs[i]
 		if m.Role != einoschema.Tool {
 			continue
 		}
 		if c := strings.TrimSpace(m.Content); c != "" {
-			return c
+			return polishUserVisibleText(ctx, c)
 		}
 	}
 	return ""
@@ -270,6 +278,16 @@ Be thorough in your reflection. If a tool result is incomplete or contradictory,
 
 ## Client-Side Tools
 Some tools are marked "(Runs on client)" — these execute on the user's local machine, not on this server. When you call them, the system will pause and ask the user to run the command locally. The user will paste the result back, and you will continue from there. Do not worry about how the result is obtained; just analyze it and proceed.`
+
+func reactFullSystemPrompt(ctx context.Context, systemPrompt string) string {
+	p := systemPrompt + reactSystemSuffix
+	if _, ok := imoutbound.ScopeFromContext(ctx); ok {
+		p += imoutbound.IMAgentInstructionSuffix()
+	} else {
+		p += skills.WebAgentInstructionSuffix()
+	}
+	return p
+}
 
 // reflectionFinalMarker：反思模型在「无需再调工具」时输出该标记；主循环可据此提前结束，避免再跑一轮带工具的 Generate。
 const reflectionFinalMarker = "[[FINAL_DONE]]"
@@ -296,7 +314,7 @@ func stripReflectionMarkers(s string) string {
 }
 
 // finalAnswerFromReflection returns text before [[FINAL_DONE]] when the marker is present.
-func finalAnswerFromReflection(content string) (string, bool) {
+func finalAnswerFromReflection(ctx context.Context, content string) (string, bool) {
 	if !strings.Contains(content, reflectionFinalMarker) {
 		return "", false
 	}
@@ -309,7 +327,7 @@ func finalAnswerFromReflection(content string) (string, bool) {
 		answer = strings.TrimSpace(strings.ReplaceAll(content, reflectionFinalMarker, ""))
 	}
 	answer = stripReflectionMarkers(answer)
-	answer = polishReActUserVisibleText(answer)
+	answer = polishUserVisibleText(ctx, answer)
 	return answer, true
 }
 
@@ -501,8 +519,10 @@ type ReActEvent struct {
 	// >0: desktop must wait for Approvals before local Tauri execution (same rules as server tool HITL).
 	ApprovalID int64 `json:"approval_id,omitempty"`
 	// Plan-and-execute (desktop task list): plan_tasks once, then plan_step with PlanStepStatus.
-	PlanTasks      []PlanTaskItem `json:"plan_tasks,omitempty"`
-	PlanStepStatus string         `json:"plan_step_status,omitempty"` // running|done|error
+	PlanTasks      []PlanTaskItem         `json:"plan_tasks,omitempty"`
+	PlanStepStatus string                 `json:"plan_step_status,omitempty"` // running|done|error
+	// File attachments generated by the tool, for web UI download.
+	Attachments []*skills.FileAttachment `json:"attachments,omitempty"`
 }
 
 type ClientToolCallError struct {
@@ -580,6 +600,90 @@ func findInvokableTool(tools []tool.BaseTool, name string) tool.InvokableTool {
 	return nil
 }
 
+// reactExecToolAndReflect finds the tool by name, runs it (with optional attachment
+// collection for stream variants), builds the tool-result message, and runs the
+// reflection step. It mutates step in place and returns the appended messages,
+// any collected attachments, and whether reflection detected a final answer.
+func (r *Runtime) reactExecToolAndReflect(
+	ctx context.Context,
+	tc *einoschema.ToolCall,
+	tools []tool.BaseTool,
+	messages []*einoschema.Message,
+	resp *einoschema.Message,
+	step *ReActStep,
+	collectAttachments bool,
+) (newMsgs []*einoschema.Message, attachments []*skills.FileAttachment, refAnswer string, refFound bool) {
+	foundTool := findInvokableTool(tools, tc.Function.Name)
+	if foundTool == nil {
+		step.Error = fmt.Sprintf("tool not found: %s", tc.Function.Name)
+		newMsgs = append(messages, &einoschema.Message{
+			Role:       einoschema.Tool,
+			Content:    fmt.Sprintf("Error: tool not found: %s", tc.Function.Name),
+			ToolCallID: tc.ID,
+			Name:       tc.Function.Name,
+		})
+		return newMsgs, nil, "", false
+	}
+
+	execCtx := ctx
+	if collectAttachments {
+		execCtx = skills.WithAttachmentCollector(ctx)
+	}
+	toolResult, err := foundTool.InvokableRun(execCtx, tc.Function.Arguments)
+	if err != nil {
+		step.Error = err.Error()
+		newMsgs = append(messages, &einoschema.Message{
+			Role:       einoschema.Tool,
+			Content:    fmt.Sprintf("Error: %s", err.Error()),
+			ToolCallID: tc.ID,
+			Name:       tc.Function.Name,
+		})
+		return newMsgs, nil, "", false
+	}
+
+	step.ToolResult = toolResult
+
+	if collectAttachments {
+		attachments = skills.GetAttachments(execCtx)
+		if len(attachments) == 0 {
+			attachments = nil
+		}
+		toolResult = skills.EnrichScreenshotToolResult(toolResult)
+	}
+
+	newMsgs = append(messages, &einoschema.Message{
+		Role:       einoschema.Tool,
+		Content:    toolResult,
+		ToolCallID: tc.ID,
+		Name:       tc.Function.Name,
+	})
+
+	reflectionMsgs := append([]*einoschema.Message{}, newMsgs...)
+	reflectionMsgs = append(reflectionMsgs, &einoschema.Message{
+		Role:    einoschema.User,
+		Content: reflectionPromptTemplate,
+	})
+
+	reflectionResp, err := r.chatModel.Generate(ctx, reflectionMsgs)
+	if err == nil && reflectionResp.Content != "" {
+		raw := reflectionResp.Content
+		step.Reflection = stripReflectionMarkers(raw)
+		if len(resp.ToolCalls) == 1 {
+			if ans, ok := finalAnswerFromReflection(ctx, raw); ok {
+				refAnswer = ans
+				refFound = true
+				return newMsgs, attachments, refAnswer, refFound
+			}
+		}
+		newMsgs = append(newMsgs, &einoschema.Message{
+			Role:    einoschema.Assistant,
+			Content: stripReflectionMarkers(raw),
+		})
+	}
+
+	return newMsgs, attachments, "", false
+}
+
 func (r *Runtime) runReActLoop(
 	ctx context.Context,
 	agent *schema.AgentWithRuntime,
@@ -593,7 +697,7 @@ func (r *Runtime) runReActLoop(
 		maxIter = agent.RuntimeProfile.MaxIterations
 	}
 
-	fullSystemPrompt := systemPrompt + reactSystemSuffix
+	fullSystemPrompt := reactFullSystemPrompt(ctx, systemPrompt)
 
 	messages := []*einoschema.Message{
 		{Role: einoschema.System, Content: fullSystemPrompt},
@@ -615,14 +719,14 @@ func (r *Runtime) runReActLoop(
 
 		if len(resp.ToolCalls) == 0 {
 			text := strings.TrimSpace(resp.Content)
-			text = polishReActUserVisibleText(text)
+			text = polishUserVisibleText(ctx, text)
 			if text == "" || isReflectionStyleAssistantText(text) {
 				if alt := lastNonToolAssistantContent(messages); alt != "" {
 					text = alt
 				}
 			}
 			if text == "" {
-				text = lastToolResultContent(messages)
+				text = lastToolResultContent(ctx, messages)
 			}
 			if text != "" {
 				result.FinalAnswer = text
@@ -667,68 +771,20 @@ func (r *Runtime) runReActLoop(
 				}
 			}
 
-			foundTool := findInvokableTool(tools, tc.Function.Name)
-			if foundTool == nil {
-				step.Error = fmt.Sprintf("tool not found: %s", tc.Function.Name)
+			var refAns string
+			var refFound bool
+			messages, _, refAns, refFound = r.reactExecToolAndReflect(ctx, tc, tools, messages, resp, &step, false)
+			if step.Error != "" {
 				result.Steps = append(result.Steps, step)
-
-				messages = append(messages, &einoschema.Message{
-					Role:       einoschema.Tool,
-					Content:    fmt.Sprintf("Error: tool not found: %s", tc.Function.Name),
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-				})
 				continue
 			}
 
-			toolResult, err := foundTool.InvokableRun(ctx, tc.Function.Arguments)
-			if err != nil {
-				step.Error = err.Error()
-				result.Steps = append(result.Steps, step)
-
-				messages = append(messages, &einoschema.Message{
-					Role:       einoschema.Tool,
-					Content:    fmt.Sprintf("Error: %s", err.Error()),
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-				})
-				continue
-			}
-
-			step.ToolResult = toolResult
 			result.TotalCalls++
-
-			messages = append(messages, &einoschema.Message{
-				Role:       einoschema.Tool,
-				Content:    toolResult,
-				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
-			})
-
-			reflectionMsgs := append([]*einoschema.Message{}, messages...)
-			reflectionMsgs = append(reflectionMsgs, &einoschema.Message{
-				Role:    einoschema.User,
-				Content: reflectionPromptTemplate,
-			})
-
-			reflectionResp, err := r.chatModel.Generate(ctx, reflectionMsgs)
-			if err == nil && reflectionResp.Content != "" {
-				raw := reflectionResp.Content
-				step.Reflection = stripReflectionMarkers(raw)
-				if len(resp.ToolCalls) == 1 {
-					if ans, ok := finalAnswerFromReflection(raw); ok {
-						result.Steps = append(result.Steps, step)
-						result.FinalAnswer = ans
-						return ans, result, nil
-					}
-				}
-				messages = append(messages, &einoschema.Message{
-					Role:    einoschema.Assistant,
-					Content: stripReflectionMarkers(raw),
-				})
-			}
-
 			result.Steps = append(result.Steps, step)
+			if refFound {
+				result.FinalAnswer = refAns
+				return refAns, result, nil
+			}
 		}
 	}
 
@@ -753,7 +809,7 @@ func (r *Runtime) runReActLoopStream(
 		maxIter = agent.RuntimeProfile.MaxIterations
 	}
 
-	fullSystemPrompt := systemPrompt + reactSystemSuffix
+	fullSystemPrompt := reactFullSystemPrompt(ctx, systemPrompt)
 
 	messages := []*einoschema.Message{
 		{Role: einoschema.System, Content: fullSystemPrompt},
@@ -768,13 +824,22 @@ func (r *Runtime) runReActLoopStream(
 
 	go func() {
 		defer func() {
+			if rec := recover(); rec != nil {
+				logger.Error("react_engine: stream panic", "recover", rec)
+			}
+		}()
+		defer func() {
 			bw.Flush()
 			pw.Close()
 		}()
 		defer r.flushUsageSession(ctx)
 
 		writeEvent := func(evt ReActEvent) {
-			data, _ := json.Marshal(evt)
+			data, err := json.Marshal(evt)
+			if err != nil {
+				logger.Error("react_engine: writeEvent marshal failed", "err", err)
+				return
+			}
 			fmt.Fprintf(bw, "data: %s\n\n", data)
 			bw.Flush()
 		}
@@ -802,14 +867,14 @@ func (r *Runtime) runReActLoopStream(
 
 			if len(resp.ToolCalls) == 0 {
 				text := strings.TrimSpace(resp.Content)
-				text = polishReActUserVisibleText(text)
+				text = polishUserVisibleText(ctx, text)
 				if text == "" || isReflectionStyleAssistantText(text) {
 					if alt := lastNonToolAssistantContent(messages); alt != "" {
 						text = alt
 					}
 				}
 				if text == "" {
-					text = lastToolResultContent(messages)
+					text = lastToolResultContent(ctx, messages)
 				}
 				text = VisibleAssistantOrFallback(text, AssistantEmptyVisibleFallback)
 				writeEvent(ReActEvent{Type: "final_answer", Content: text, Step: iter + 1})
@@ -892,65 +957,30 @@ func (r *Runtime) runReActLoopStream(
 					return
 				}
 
-				foundTool := findInvokableTool(tools, tc.Function.Name)
-				if foundTool == nil {
-					errMsg := fmt.Sprintf("tool not found: %s", tc.Function.Name)
-					writeEvent(ReActEvent{Type: "error", Content: errMsg, Step: iter + 1, Tool: tc.Function.Name})
-					messages = append(messages, &einoschema.Message{
-						Role:       einoschema.Tool,
-						Content:    "Error: " + errMsg,
-						ToolCallID: tc.ID,
-						Name:       tc.Function.Name,
-					})
+				var step ReActStep
+				var attachments []*skills.FileAttachment
+				var refAns string
+				var refFound bool
+				messages, attachments, refAns, refFound = r.reactExecToolAndReflect(ctx, tc, tools, messages, resp, &step, true)
+				if step.Error != "" {
+					writeEvent(ReActEvent{Type: "error", Content: step.Error, Step: iter + 1, Tool: tc.Function.Name})
 					continue
 				}
 
-				toolResult, err := foundTool.InvokableRun(ctx, tc.Function.Arguments)
-				if err != nil {
-					writeEvent(ReActEvent{Type: "error", Content: err.Error(), Step: iter + 1, Tool: tc.Function.Name})
-					messages = append(messages, &einoschema.Message{
-						Role:       einoschema.Tool,
-						Content:    fmt.Sprintf("Error: %s", err.Error()),
-						ToolCallID: tc.ID,
-						Name:       tc.Function.Name,
-					})
-					continue
+				writeEvent(ReActEvent{Type: "observation", Content: step.ToolResult, Step: iter + 1, Tool: tc.Function.Name, Attachments: attachments})
+
+				if step.Reflection != "" {
+					writeEvent(ReActEvent{Type: "reflection", Content: step.Reflection, Step: iter + 1})
 				}
 
-				writeEvent(ReActEvent{Type: "observation", Content: toolResult, Step: iter + 1, Tool: tc.Function.Name})
-
-				messages = append(messages, &einoschema.Message{
-					Role:       einoschema.Tool,
-					Content:    toolResult,
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-				})
-
-				reflectionMsgs := append([]*einoschema.Message{}, messages...)
-				reflectionMsgs = append(reflectionMsgs, &einoschema.Message{
-					Role:    einoschema.User,
-					Content: reflectionPromptTemplate,
-				})
-
-				reflectionResp, err := r.chatModel.Generate(ctx, reflectionMsgs)
-				if err == nil && reflectionResp.Content != "" {
-					raw := reflectionResp.Content
-					writeEvent(ReActEvent{Type: "reflection", Content: stripReflectionMarkers(raw), Step: iter + 1})
-					if len(resp.ToolCalls) == 1 {
-						if ans, ok := finalAnswerFromReflection(raw); ok {
-							writeEvent(ReActEvent{Type: "final_answer", Content: ans, Step: iter + 1})
-							if err := streamStaticTextAsSSE(pw, ans); err != nil {
-								return
-							}
-							fmt.Fprintf(bw, "data: [DONE]\n\n")
-							bw.Flush()
-							return
-						}
+				if refFound {
+					writeEvent(ReActEvent{Type: "final_answer", Content: refAns, Step: iter + 1})
+					if err := streamStaticTextAsSSE(pw, refAns); err != nil {
+						return
 					}
-					messages = append(messages, &einoschema.Message{
-						Role:    einoschema.Assistant,
-						Content: stripReflectionMarkers(raw),
-					})
+					fmt.Fprintf(bw, "data: [DONE]\n\n")
+					bw.Flush()
+					return
 				}
 			}
 		}
@@ -1049,7 +1079,7 @@ func (r *Runtime) ResumeReActLoop(
 		maxIter = agent.RuntimeProfile.MaxIterations
 	}
 
-	fullSystemPrompt := systemPrompt + reactSystemSuffix
+	fullSystemPrompt := reactFullSystemPrompt(ctx, systemPrompt)
 
 	for i, m := range msgs {
 		if m.Role == einoschema.System {
@@ -1071,14 +1101,14 @@ func (r *Runtime) ResumeReActLoop(
 
 		if len(resp.ToolCalls) == 0 {
 			text := strings.TrimSpace(resp.Content)
-			text = polishReActUserVisibleText(text)
+			text = polishUserVisibleText(ctx, text)
 			if text == "" || isReflectionStyleAssistantText(text) {
 				if alt := lastNonToolAssistantContent(msgs); alt != "" {
 					text = alt
 				}
 			}
 			if text == "" {
-				text = lastToolResultContent(msgs)
+				text = lastToolResultContent(ctx, msgs)
 			}
 			if text != "" {
 				result_.FinalAnswer = text
@@ -1124,65 +1154,20 @@ func (r *Runtime) ResumeReActLoop(
 				}
 			}
 
-			foundTool := findInvokableTool(tools, tc.Function.Name)
-			if foundTool == nil {
-				step.Error = fmt.Sprintf("tool not found: %s", tc.Function.Name)
+			var refAns string
+			var refFound bool
+			msgs, _, refAns, refFound = r.reactExecToolAndReflect(ctx, tc, tools, msgs, resp, &step, false)
+			if step.Error != "" {
 				result_.Steps = append(result_.Steps, step)
-				msgs = append(msgs, &einoschema.Message{
-					Role:       einoschema.Tool,
-					Content:    fmt.Sprintf("Error: tool not found: %s", tc.Function.Name),
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-				})
 				continue
 			}
 
-			toolResult, err := foundTool.InvokableRun(ctx, tc.Function.Arguments)
-			if err != nil {
-				step.Error = err.Error()
-				result_.Steps = append(result_.Steps, step)
-				msgs = append(msgs, &einoschema.Message{
-					Role:       einoschema.Tool,
-					Content:    fmt.Sprintf("Error: %s", err.Error()),
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-				})
-				continue
-			}
-
-			step.ToolResult = toolResult
 			result_.TotalCalls++
-			msgs = append(msgs, &einoschema.Message{
-				Role:       einoschema.Tool,
-				Content:    toolResult,
-				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
-			})
-
-			reflectionMsgs := append([]*einoschema.Message{}, msgs...)
-			reflectionMsgs = append(reflectionMsgs, &einoschema.Message{
-				Role:    einoschema.User,
-				Content: reflectionPromptTemplate,
-			})
-
-			reflectionResp, err := r.chatModel.Generate(ctx, reflectionMsgs)
-			if err == nil && reflectionResp.Content != "" {
-				raw := reflectionResp.Content
-				step.Reflection = stripReflectionMarkers(raw)
-				if len(resp.ToolCalls) == 1 {
-					if ans, ok := finalAnswerFromReflection(raw); ok {
-						result_.Steps = append(result_.Steps, step)
-						result_.FinalAnswer = ans
-						return ans, result_, nil
-					}
-				}
-				msgs = append(msgs, &einoschema.Message{
-					Role:    einoschema.Assistant,
-					Content: stripReflectionMarkers(raw),
-				})
-			}
-
 			result_.Steps = append(result_.Steps, step)
+			if refFound {
+				result_.FinalAnswer = refAns
+				return refAns, result_, nil
+			}
 		}
 	}
 
@@ -1214,7 +1199,7 @@ func (r *Runtime) ResumeReActLoopStream(
 		maxIter = agent.RuntimeProfile.MaxIterations
 	}
 
-	fullSystemPrompt := systemPrompt + reactSystemSuffix
+	fullSystemPrompt := reactFullSystemPrompt(ctx, systemPrompt)
 
 	for i, m := range msgs {
 		if m.Role == einoschema.System {
@@ -1230,13 +1215,22 @@ func (r *Runtime) ResumeReActLoopStream(
 
 	go func() {
 		defer func() {
+			if rec := recover(); rec != nil {
+				logger.Error("react_engine: resume stream panic", "recover", rec)
+			}
+		}()
+		defer func() {
 			bw.Flush()
 			pw.Close()
 		}()
 		defer r.flushUsageSession(ctx)
 
 		writeEvent := func(evt ReActEvent) {
-			data, _ := json.Marshal(evt)
+			data, err := json.Marshal(evt)
+			if err != nil {
+				logger.Error("react_engine: writeEvent marshal failed", "err", err)
+				return
+			}
 			fmt.Fprintf(bw, "data: %s\n\n", data)
 			bw.Flush()
 		}
@@ -1254,14 +1248,14 @@ func (r *Runtime) ResumeReActLoopStream(
 
 			if len(resp.ToolCalls) == 0 {
 				text := strings.TrimSpace(resp.Content)
-				text = polishReActUserVisibleText(text)
+				text = polishUserVisibleText(ctx, text)
 				if text == "" || isReflectionStyleAssistantText(text) {
 					if alt := lastNonToolAssistantContent(msgs); alt != "" {
 						text = alt
 					}
 				}
 				if text == "" {
-					text = lastToolResultContent(msgs)
+					text = lastToolResultContent(ctx, msgs)
 				}
 				text = VisibleAssistantOrFallback(text, AssistantEmptyVisibleFallback)
 				writeEvent(ReActEvent{Type: "final_answer", Content: text, Step: iter + 1})
@@ -1334,65 +1328,30 @@ func (r *Runtime) ResumeReActLoopStream(
 					return
 				}
 
-				foundTool := findInvokableTool(tools, tc.Function.Name)
-				if foundTool == nil {
-					errMsg := fmt.Sprintf("tool not found: %s", tc.Function.Name)
-					writeEvent(ReActEvent{Type: "error", Content: errMsg, Step: iter + 1, Tool: tc.Function.Name})
-					msgs = append(msgs, &einoschema.Message{
-						Role:       einoschema.Tool,
-						Content:    "Error: " + errMsg,
-						ToolCallID: tc.ID,
-						Name:       tc.Function.Name,
-					})
+				var step ReActStep
+				var attachments []*skills.FileAttachment
+				var refAns string
+				var refFound bool
+				msgs, attachments, refAns, refFound = r.reactExecToolAndReflect(ctx, tc, tools, msgs, resp, &step, true)
+				if step.Error != "" {
+					writeEvent(ReActEvent{Type: "error", Content: step.Error, Step: iter + 1, Tool: tc.Function.Name})
 					continue
 				}
 
-				toolResult, err := foundTool.InvokableRun(ctx, tc.Function.Arguments)
-				if err != nil {
-					writeEvent(ReActEvent{Type: "error", Content: err.Error(), Step: iter + 1, Tool: tc.Function.Name})
-					msgs = append(msgs, &einoschema.Message{
-						Role:       einoschema.Tool,
-						Content:    fmt.Sprintf("Error: %s", err.Error()),
-						ToolCallID: tc.ID,
-						Name:       tc.Function.Name,
-					})
-					continue
+				writeEvent(ReActEvent{Type: "observation", Content: step.ToolResult, Step: iter + 1, Tool: tc.Function.Name, Attachments: attachments})
+
+				if step.Reflection != "" {
+					writeEvent(ReActEvent{Type: "reflection", Content: step.Reflection, Step: iter + 1})
 				}
 
-				writeEvent(ReActEvent{Type: "observation", Content: toolResult, Step: iter + 1, Tool: tc.Function.Name})
-
-				msgs = append(msgs, &einoschema.Message{
-					Role:       einoschema.Tool,
-					Content:    toolResult,
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-				})
-
-				reflectionMsgs := append([]*einoschema.Message{}, msgs...)
-				reflectionMsgs = append(reflectionMsgs, &einoschema.Message{
-					Role:    einoschema.User,
-					Content: reflectionPromptTemplate,
-				})
-
-				reflectionResp, err := r.chatModel.Generate(ctx, reflectionMsgs)
-				if err == nil && reflectionResp.Content != "" {
-					raw := reflectionResp.Content
-					writeEvent(ReActEvent{Type: "reflection", Content: stripReflectionMarkers(raw), Step: iter + 1})
-					if len(resp.ToolCalls) == 1 {
-						if ans, ok := finalAnswerFromReflection(raw); ok {
-							writeEvent(ReActEvent{Type: "final_answer", Content: ans, Step: iter + 1})
-							if err := streamStaticTextAsSSE(pw, ans); err != nil {
-								return
-							}
-							fmt.Fprintf(bw, "data: [DONE]\n\n")
-							bw.Flush()
-							return
-						}
+				if refFound {
+					writeEvent(ReActEvent{Type: "final_answer", Content: refAns, Step: iter + 1})
+					if err := streamStaticTextAsSSE(pw, refAns); err != nil {
+						return
 					}
-					msgs = append(msgs, &einoschema.Message{
-						Role:    einoschema.Assistant,
-						Content: stripReflectionMarkers(raw),
-					})
+					fmt.Fprintf(bw, "data: [DONE]\n\n")
+					bw.Flush()
+					return
 				}
 			}
 		}

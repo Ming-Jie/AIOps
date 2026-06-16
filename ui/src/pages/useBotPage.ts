@@ -4,7 +4,7 @@ import { useQuasar } from 'quasar'
 import { api } from 'boot/axios'
 import type { APIResponse } from 'src/api/types'
 
-export type BotType = 'lark' | 'telegram' | 'dingtalk'
+export type BotType = 'lark' | 'telegram' | 'dingtalk' | 'qq'
 
 /** 智能机器人列表行 */
 export interface BotRow {
@@ -23,11 +23,30 @@ export interface BotListResponse {
   bot_count: number
 }
 
+function botTypeColor (type?: BotType): string {
+  switch (type) {
+    case 'lark': return 'blue'
+    case 'dingtalk': return 'orange'
+    case 'qq': return 'green'
+    default: return 'primary'
+  }
+}
+
+function botTypeLabel (type?: BotType): string {
+  switch (type) {
+    case 'lark': return '飞书'
+    case 'dingtalk': return '钉钉'
+    case 'qq': return 'QQ'
+    default: return 'Telegram'
+  }
+}
+
 function botApiPrefix (type: BotType): string {
   switch (type) {
     case 'lark': return '/larkbots'
     case 'telegram': return '/telegrambots'
     case 'dingtalk': return '/dingtalkbots'
+    case 'qq': return '/qqbots'
   }
 }
 
@@ -44,7 +63,7 @@ export function useBotPage () {
   const historyDialogOpen = ref(false)
   const historyAgentId = ref(0)
   const historyAgentName = ref('')
-  const historyChannel = ref<'lark' | 'telegram' | 'dingtalk' | 'all'>('all')
+  const historyChannel = ref<'lark' | 'telegram' | 'dingtalk' | 'qq' | 'wecom' | 'all'>('all')
 
   const columns = computed(() => {
     const cols = [
@@ -61,21 +80,24 @@ export function useBotPage () {
   async function load () {
     loading.value = true
     try {
-      const [larkRes, telegramRes, dingtalkRes] = await Promise.all([
+      const [larkRes, telegramRes, dingtalkRes, qqRes] = await Promise.all([
         api.get<APIResponse<BotListResponse>>('/larkbots'),
         api.get<APIResponse<BotListResponse>>('/telegrambots'),
-        api.get<APIResponse<BotListResponse>>('/dingtalkbots')
+        api.get<APIResponse<BotListResponse>>('/dingtalkbots'),
+        api.get<APIResponse<BotListResponse>>('/qqbots')
       ])
       const larkBots = ((larkRes.data.data as BotListResponse)?.bots || []).map(b => ({ ...b, bot_type: 'lark' as BotType }))
       const telegramBots = ((telegramRes.data.data as BotListResponse)?.bots || []).map(b => ({ ...b, bot_type: 'telegram' as BotType }))
       const dingtalkBots = ((dingtalkRes.data.data as BotListResponse)?.bots || []).map(b => ({ ...b, bot_type: 'dingtalk' as BotType }))
-      const allBots = [...larkBots, ...telegramBots, ...dingtalkBots]
+      const qqBots = ((qqRes.data.data as BotListResponse)?.bots || []).map(b => ({ ...b, bot_type: 'qq' as BotType }))
+      const allBots = [...larkBots, ...telegramBots, ...dingtalkBots, ...qqBots]
       bots.value = allBots
       botCount.value = allBots.length
       running.value =
         ((larkRes.data.data as BotListResponse)?.running ||
         (telegramRes.data.data as BotListResponse)?.running ||
-        (dingtalkRes.data.data as BotListResponse)?.running) || false
+        (dingtalkRes.data.data as BotListResponse)?.running ||
+        (qqRes.data.data as BotListResponse)?.running) || false
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } }
       $q.notify({ type: 'negative', message: err.response?.data?.message ?? t('loadFailed') })
@@ -90,7 +112,8 @@ export function useBotPage () {
       await Promise.all([
         api.post('/larkbots/start'),
         api.post('/telegrambots/start'),
-        api.post('/dingtalkbots/start')
+        api.post('/dingtalkbots/start'),
+        api.post('/qqbots/start')
       ])
       $q.notify({ type: 'positive', message: t('botStarted') })
       await load()
@@ -108,7 +131,8 @@ export function useBotPage () {
       await Promise.all([
         api.post('/larkbots/stop'),
         api.post('/telegrambots/stop'),
-        api.post('/dingtalkbots/stop')
+        api.post('/dingtalkbots/stop'),
+        api.post('/qqbots/stop')
       ])
       $q.notify({ type: 'positive', message: t('botStopped') })
       await load()
@@ -201,6 +225,8 @@ export function useBotPage () {
     historyAgentId,
     historyAgentName,
     historyChannel,
-    openHistory
+    openHistory,
+    botTypeColor,
+    botTypeLabel
   }
 }

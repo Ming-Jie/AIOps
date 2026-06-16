@@ -45,11 +45,18 @@ export function useMCPPage () {
     { name: 'key', label: t('key'), field: 'key', align: 'left' as const },
     { name: 'name', label: t('name'), field: 'name', align: 'left' as const },
     { name: 'transport', label: t('transport'), field: 'transport', align: 'left' as const },
-    { name: 'endpoint', label: t('endpoint'), field: 'endpoint', align: 'left' as const },
+    { name: 'endpoint', label: t('endpoint'), field: 'endpoint', align: 'left' as const, style: 'max-width:180px' },
+    { name: 'created_by', label: t('creator'), field: 'created_by', align: 'center' as const },
     { name: 'health_status', label: t('healthStatus'), field: 'health_status', align: 'left' as const },
     { name: 'tool_count', label: t('toolCount'), field: 'tool_count', align: 'center' as const },
     { name: 'actions', label: t('actions'), field: 'actions', align: 'right' as const }
   ])
+  const pagination = ref({
+    sortBy: 'id' as string,
+    descending: false,
+    page: 1,
+    rowsPerPage: 10
+  })
   const dialogOpen = ref(false)
   const editingId = ref<number | null>(null)
   const form = reactive({ ...defaultForm })
@@ -240,6 +247,7 @@ export function useMCPPage () {
     columns,
     load,
     dialogOpen,
+    pagination,
     form,
     editingId,
     openDialog,

@@ -1,3 +1,8 @@
+import {
+  pickWebAssistantDisplayText,
+  sanitizeWebAssistantBubbleText
+} from 'src/utils/chatAttachments'
+
 type SSEPayload = {
   content?: string
   text?: string
@@ -107,8 +112,9 @@ export function createChatSSEParser (handlers: ChatSSEParserHandlers = {}) {
   }
 
   function visibleText (): string {
-    if (tokenAcc.trim()) return tokenAcc
-    return finalAnswer
+    const sanitizedAcc = sanitizeWebAssistantBubbleText(tokenAcc)
+    const sanitizedFinal = sanitizeWebAssistantBubbleText(finalAnswer)
+    return pickWebAssistantDisplayText(tokenAcc, finalAnswer, sanitizedAcc, sanitizedFinal)
   }
 
   return { feed, finish }

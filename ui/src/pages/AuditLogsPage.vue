@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <q-table flat bordered :rows="rows" :columns="columns" row-key="id" :loading="loading" :pagination="pagination" @request="onRequest" no-data-label="暂无数据">
+    <q-table flat bordered class="q-table--soft radius-md" :rows="rows" :columns="columns" row-key="id" :loading="loading" :pagination="pagination" @request="onRequest" no-data-label="暂无数据">
       <template #body-cell-username="props">
         <q-td :props="props">
           <span class="text-body2">{{ props.row.username || '—' }}</span>

@@ -98,6 +98,7 @@ type InMemoryStorage struct {
 	workflowKeyToID     map[string]int64
 	workflowCount       int64
 	channels            map[int64]*model.Channel
+	chatUsers           map[int64][]int64 // agent_id -> []user_id
 	channelCount        int64
 
 	messageChannels     map[int64]*model.MessageChannel
@@ -150,6 +151,7 @@ func NewInMemoryStorage() *InMemoryStorage {
 		workflowDefKeyToID:   make(map[string]int64),
 		schedules:            make(map[int64]*model.Schedule),
 		roleAgentPermissions: make(map[int64]map[int64]bool),
+		chatUsers:            make(map[int64][]int64),
 	}
 }
 
@@ -167,6 +169,7 @@ func (s *InMemoryStorage) ListAgents() ([]*schema.Agent, error) {
 			Category:  a.Category,
 			IsBuiltin: a.IsBuiltin,
 			IsActive:  a.IsActive,
+			CreatedBy: a.CreatedBy,
 			CreatedAt: a.CreatedAt,
 			UpdatedAt: a.UpdatedAt,
 		})
@@ -185,6 +188,17 @@ func (s *InMemoryStorage) GetAgent(id int64) (*schema.AgentWithRuntime, error) {
 	return agent, nil
 }
 
+func (s *InMemoryStorage) GetAgentOwner(id int64) (int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	agent, ok := s.agents[id]
+	if !ok {
+		return 0, ErrAgentNotFound
+	}
+	return agent.CreatedBy, nil
+}
+
 func (s *InMemoryStorage) GetAgentIDByName(ctx context.Context, name string) (int64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -197,7 +211,7 @@ func (s *InMemoryStorage) GetAgentIDByName(ctx context.Context, name string) (in
 	return 0, ErrAgentNotFound
 }
 
-func (s *InMemoryStorage) CreateAgent(req *schema.CreateAgentRequest) (*schema.Agent, error) {
+func (s *InMemoryStorage) CreateAgent(req *schema.CreateAgentRequest, createdBy int64) (*schema.Agent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -211,6 +225,7 @@ func (s *InMemoryStorage) CreateAgent(req *schema.CreateAgentRequest) (*schema.A
 		Category:  req.Category,
 		IsBuiltin: false,
 		IsActive:  true,
+		CreatedBy: createdBy,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -270,7 +285,35 @@ func (s *InMemoryStorage) DeleteAgent(id int64) error {
 	delete(s.agents, id)
 	delete(s.treeNodes, id)
 	delete(s.treeVersion, id)
+	delete(s.chatUsers, id)
 	return nil
+}
+
+func (s *InMemoryStorage) SetAgentChatUsers(ctx context.Context, agentID int64, userIDs []int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(userIDs) == 0 {
+		delete(s.chatUsers, agentID)
+		return nil
+	}
+	ids := make([]int64, len(userIDs))
+	copy(ids, userIDs)
+	s.chatUsers[agentID] = ids
+	return nil
+}
+
+func (s *InMemoryStorage) GetAgentChatUsers(ctx context.Context, agentID int64) ([]int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ids := s.chatUsers[agentID]
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	out := make([]int64, len(ids))
+	copy(out, ids)
+	return out, nil
 }
 
 func (s *InMemoryStorage) GetCapabilityTree(agentID int64) (*schema.CapabilityTree, error) {
@@ -330,7 +373,7 @@ func (s *InMemoryStorage) GetSkillByKey(key string) (*schema.Skill, error) {
 	return nil, fmt.Errorf("skill not found by key: %s", key)
 }
 
-func (s *InMemoryStorage) CreateSkill(req *schema.CreateSkillRequest) (*schema.Skill, error) {
+func (s *InMemoryStorage) CreateSkill(req *schema.CreateSkillRequest, createdBy int64) (*schema.Skill, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -349,6 +392,7 @@ func (s *InMemoryStorage) CreateSkill(req *schema.CreateSkillRequest) (*schema.S
 		SourceRef:   req.SourceRef,
 		RiskLevel:   schema.RiskLevelLow,
 		IsActive:    true,
+		CreatedBy:   createdBy,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -356,7 +400,7 @@ func (s *InMemoryStorage) CreateSkill(req *schema.CreateSkillRequest) (*schema.S
 	return skill, nil
 }
 
-func (s *InMemoryStorage) UpsertSkill(req *schema.CreateSkillRequest) (*schema.Skill, error) {
+func (s *InMemoryStorage) UpsertSkill(req *schema.CreateSkillRequest, createdBy int64) (*schema.Skill, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -386,6 +430,7 @@ func (s *InMemoryStorage) UpsertSkill(req *schema.CreateSkillRequest) (*schema.S
 		SourceRef:   req.SourceRef,
 		RiskLevel:   schema.RiskLevelLow,
 		IsActive:    true,
+		CreatedBy:   createdBy,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -458,7 +503,7 @@ func (s *InMemoryStorage) GetMCPConfig(id int64) (*schema.MCPConfig, error) {
 	return cfg, nil
 }
 
-func (s *InMemoryStorage) CreateMCPConfig(req *schema.CreateMCPConfigRequest) (*schema.MCPConfig, error) {
+func (s *InMemoryStorage) CreateMCPConfig(req *schema.CreateMCPConfigRequest, createdBy int64) (*schema.MCPConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -474,6 +519,7 @@ func (s *InMemoryStorage) CreateMCPConfig(req *schema.CreateMCPConfigRequest) (*
 		IsActive:     true,
 		HealthStatus: "unknown",
 		ToolCount:    0,
+		CreatedBy:    createdBy,
 		CreatedAt:    now,
 	}
 	s.mcpConfigs[cfg.ID] = cfg
@@ -810,12 +856,14 @@ func (s *InMemoryStorage) CreateChatSession(ctx context.Context, agentID int64, 
 	}
 	now := time.Now()
 	sess := schema.ChatSession{
-		SessionID: uuid.NewString(),
-		AgentID:   agentID,
-		UserID:    userID,
-		Title:     "",
-		CreatedAt: now,
-		UpdatedAt: now,
+		SessionID:          uuid.NewString(),
+		AgentID:            agentID,
+		UserID:             userID,
+		Title:              "",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		ResetPolicy:        "none",
+		IdleTimeoutMinutes: 30,
 	}
 	s.chatSessions = append(s.chatSessions, sess)
 	return &sess, nil
@@ -1778,6 +1826,28 @@ func (s *InMemoryStorage) GetA2ACard(ctx context.Context, id int64) (*model.A2AC
 	if !ok {
 		return nil, fmt.Errorf("a2a card not found: %d", id)
 	}
+	cp := *card
+	return &cp, nil
+}
+
+func (s *InMemoryStorage) UpdateA2ACard(ctx context.Context, id int64, req *schema.UpdateA2ACardRequest) (*model.A2ACard, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	card, ok := s.a2aCards[id]
+	if !ok {
+		return nil, fmt.Errorf("a2a card not found: %d", id)
+	}
+
+	card.Name = req.Name
+	card.Description = req.Description
+	card.URL = req.URL
+	card.Version = req.Version
+	if req.Capabilities != nil {
+		card.Capabilities = req.Capabilities
+	}
+	card.IsActive = req.IsActive
+
 	cp := *card
 	return &cp, nil
 }

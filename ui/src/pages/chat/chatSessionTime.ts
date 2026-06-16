@@ -11,7 +11,8 @@ export function formatSessionTime (iso: string): string {
 export function dayKeyLocal (iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 /** 与上一条不在同一天时展示日期分隔（首条也会展示） */

@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 	einoschema "github.com/cloudwego/eino/schema"
+	"github.com/fisk086/aiops/internal/logger"
 )
 
 const toolSSHExecutor = "builtin_ssh_executor"
@@ -49,6 +50,7 @@ func execBuiltinSSHExecutor(_ context.Context, in map[string]any) (string, error
 		user = "root"
 	}
 
+	logger.Warn("SSH executor: StrictHostKeyChecking=no disables MITM protection; use a dedicated SSH bastion in production")
 	cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "-p", port, fmt.Sprintf("%s@%s", user, host), command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

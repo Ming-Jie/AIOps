@@ -203,6 +203,14 @@ func (s *TokenUsageService) RecordUsage(usage *model.TokenUsage) error {
 
 func (s *TokenUsageService) RecordUsageAsync(usage *model.TokenUsage) {
 	go func() {
+		if usage.UserName == "" {
+			if id, err := strconv.ParseInt(strings.TrimSpace(usage.UserID), 10, 64); err == nil && id > 0 {
+				var u model.User
+				if err := s.db.Select("username").First(&u, id).Error; err == nil && strings.TrimSpace(u.Username) != "" {
+					usage.UserName = u.Username
+				}
+			}
+		}
 		if err := s.db.Create(usage).Error; err != nil {
 			logger.Error("failed to record token usage", "err", err)
 		}

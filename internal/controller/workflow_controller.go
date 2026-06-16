@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/fisk086/aiops/internal/auth"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/service"
 	"github.com/fisk086/aiops/internal/storage"
@@ -14,15 +15,20 @@ import (
 )
 
 type WorkflowController struct {
-	svc *service.WorkflowService
+	svc       *service.WorkflowService
+	jwtCfg    auth.JWTConfig
+	userStore storage.UserStore
 }
 
-func NewWorkflowController(svc *service.WorkflowService) *WorkflowController {
-	return &WorkflowController{svc: svc}
+func NewWorkflowController(svc *service.WorkflowService, jwtCfg auth.JWTConfig, userStore storage.UserStore) *WorkflowController {
+	return &WorkflowController{svc: svc, jwtCfg: jwtCfg, userStore: userStore}
 }
 
 func (c *WorkflowController) RegisterRoutes(r *server.Hertz) {
 	g := r.Group("/api/v1/workflows")
+	if c.userStore != nil {
+		g.Use(auth.JWTMiddleware(c.jwtCfg, c.getUserForMiddleware))
+	}
 	g.GET("", c.List)
 	g.GET("/:id", c.Get)
 	g.POST("", c.Create)
@@ -151,4 +157,12 @@ func (c *WorkflowController) Delete(ctx context.Context, hc *app.RequestContext)
 		return
 	}
 	hc.JSON(http.StatusOK, schema.SuccessResponse(map[string]string{"status": "deleted"}))
+}
+
+func (c *WorkflowController) getUserForMiddleware(userID int64) (*auth.User, error) {
+	user, err := c.userStore.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.User{ID: user.ID, Username: user.Username, Email: user.Email, Status: string(user.Status), IsAdmin: user.IsAdmin}, nil
 }

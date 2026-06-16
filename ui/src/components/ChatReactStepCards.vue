@@ -60,6 +60,12 @@ function grafanaQueryRows (list: unknown[] | null): { panel_title?: string; prom
   if (!list?.length) return []
   return list as { panel_title?: string; promql?: string }[]
 }
+
+function formatSize (bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
 </script>
 
 <template>
@@ -221,6 +227,31 @@ function grafanaQueryRows (list: unknown[] | null): { panel_title?: string; prom
             {{ t('chatReactRawCollapsedHint') }}
           </div>
         </template>
+
+        <div v-if="item.step.data?.attachments" class="q-mt-sm">
+          <div class="row items-center q-gutter-x-xs q-mb-xs">
+            <q-icon name="attach_file" size="xs" color="secondary" />
+            <span class="text-caption text-weight-bold text-secondary">生成的文件</span>
+          </div>
+          <div class="row q-gutter-x-xs q-gutter-y-xs">
+            <template v-for="(att, ai) in (item.step.data.attachments as any[])" :key="ai">
+              <q-btn
+                :label="att.filename + (att.size ? ` (${formatSize(att.size)})` : '')"
+                :href="att.inline || att.url"
+                :download="att.filename"
+                dense
+                no-caps
+                size="sm"
+                color="secondary"
+                outline
+                icon="download"
+                rel="noopener"
+                target="_blank"
+                class="q-mr-xs q-mb-xs"
+              />
+            </template>
+          </div>
+        </div>
       </q-card-section>
     </q-card>
 

@@ -16,7 +16,7 @@ const messageColumns = [
 
 const defaultChannelForm = {
   name: '',
-  agent_id: 0,
+  agent_id: null as number | null,
   kind: 'direct',
   description: '',
   is_public: false,
@@ -24,16 +24,16 @@ const defaultChannelForm = {
 }
 
 const defaultMessageForm = {
-  from_agent_id: 0,
-  to_agent_id: 0,
-  channel_id: 0,
+  from_agent_id: null as number | null,
+  to_agent_id: null as number | null,
+  channel_id: null as number | null,
   kind: 'text',
   content: '',
   priority: 0
 }
 
 const defaultA2AForm = {
-  agent_id: 0,
+  agent_id: null as number | null,
   name: '',
   description: '',
   url: '',
@@ -57,6 +57,7 @@ export function useMessagesPage () {
 
   const a2aColumns = computed(() => [
     { name: 'id', label: 'ID', field: 'id', align: 'left' as const },
+    { name: 'agent_name', label: '所属智能体', field: 'agent_name', align: 'left' as const },
     { name: 'name', label: '名称', field: 'name', align: 'left' as const },
     { name: 'url', label: 'URL', field: 'url', align: 'left' as const },
     { name: 'version', label: '版本', field: 'version', align: 'center' as const },
@@ -87,8 +88,8 @@ export function useMessagesPage () {
   const a2aForm = reactive({ ...defaultA2AForm })
 
   const messageFilter = reactive({
-    agent_id: 0,
-    channel_id: 0,
+    agent_id: null as number | null,
+    channel_id: null as number | null,
     status: ''
   })
 

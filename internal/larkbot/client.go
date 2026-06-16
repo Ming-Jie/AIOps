@@ -85,10 +85,16 @@ func (c *Client) RegisterBot(cfg *BotConfig, runtime *agent.Runtime) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if _, exists := c.bots[cfg.AppID]; exists {
+	if existing, exists := c.bots[cfg.AppID]; exists {
+		if existing.Config.AgentID == cfg.AgentID {
+			existing.Config = cfg
+			existing.Runtime = runtime
+			logger.Info("larkbot: bot re-registered (same agent, updated config)", "app_id", cfg.AppID, "agent_id", cfg.AgentID)
+			return nil
+		}
 		logger.Warn("larkbot: app_id already bound to another agent, one-to-many not supported",
-			"app_id", cfg.AppID, "new_agent_id", cfg.AgentID, "existing_agent_id", c.bots[cfg.AppID].Config.AgentID)
-		return fmt.Errorf("app_id %s already bound to agent %d, one-to-one only (one-to-many not supported)", cfg.AppID, c.bots[cfg.AppID].Config.AgentID)
+			"app_id", cfg.AppID, "new_agent_id", cfg.AgentID, "existing_agent_id", existing.Config.AgentID)
+		return fmt.Errorf("app_id %s already bound to agent %d, one-to-one only (one-to-many not supported)", cfg.AppID, existing.Config.AgentID)
 	}
 
 	c.bots[cfg.AppID] = &BotEntry{
@@ -173,6 +179,11 @@ func (c *Client) RefreshBot(ctx context.Context, appID string) error {
 	c.mu.Unlock()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("larkbot: ws refresh panic", "app_id", appID, "recover", r)
+			}
+		}()
 		logger.Info("larkbot: refreshing ws client", "app_id", appID)
 		err := wsClient.Start(ctx2)
 		c.mu.Lock()
@@ -200,7 +211,7 @@ func (c *Client) RefreshAllBots(ctx context.Context) {
 	logger.Info("larkbot: all eligible ws clients refreshed", "bot_count", len(appIDs))
 }
 
-// appIDsForGlobalWS returns app_ids that participate in global Start/Refresh (ws_enabled true or legacy nil).
+// appIDsForGlobalWS returns app_ids that participate in global Start/Refresh (ws_enabled true only).
 // Skips NoAutoStartWS bots (ws_enabled false); logs each skip so operators can see why.
 func (c *Client) appIDsForGlobalWS(op string) []string {
 	c.mu.Lock()
@@ -261,6 +272,11 @@ func (c *Client) StartBot(parentCtx context.Context, appID string) error {
 	c.mu.Unlock()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("larkbot: ws start panic", "app_id", appID, "recover", r)
+			}
+		}()
 		logger.Info("larkbot: ws client starting", "app_id", appID)
 		err := wsClient.Start(ctx)
 		c.mu.Lock()
@@ -435,11 +451,16 @@ func (c *Client) handleMessage(ctx context.Context, event *larkim.P2MessageRecei
 	}
 
 	// Ack WS quickly; reaction + LLM + reply run async to avoid Lark event redelivery on slow handlers.
-	go c.processIncomingMessage(appID, messageID, senderID, userInput)
+	go c.processIncomingMessage(appID, messageID, chatID, senderID, userInput)
 	return nil
 }
 
-func (c *Client) processIncomingMessage(appID, messageID, senderID, userInput string) {
+func (c *Client) processIncomingMessage(appID, messageID, chatID, senderID, userInput string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("larkbot: processIncomingMessage panic", "app_id", appID, "recover", r)
+		}
+	}()
 	if !c.IsBotWSRunning(appID) {
 		return
 	}
@@ -461,33 +482,87 @@ func (c *Client) processIncomingMessage(appID, messageID, senderID, userInput st
 		return
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 	var sessionID string
 	var history []*einoschema.Message
 	imUserID := imhistory.FormatIMUserID("lark", senderID)
 	if rec := imhistory.GlobalRecorder(); rec != nil && senderID != "" {
 		sessionID, history = rec.PrepareConversation(ctx, "lark", cfg.AgentID, senderID, 20)
 	}
-	if sessionID != "" {
+	if sessionID == "" {
+		logger.Warn("larkbot: empty session_id — IM outbound scope NOT set; file attachments cannot stage",
+			"agent_id", cfg.AgentID, "sender_id", senderID)
+	} else {
 		ctx = imoutbound.WithScope(ctx, cfg.AgentID, sessionID)
+		logger.Info("larkbot: IM scope set", "agent_id", cfg.AgentID, "session_id", sessionID)
 	}
 
-	respText, err := c.invokeAgent(ctx, runtime, cfg, userInput, senderID, sessionID, history)
+	respText, agentCtx, err := c.invokeAgent(ctx, runtime, cfg, userInput, senderID, sessionID, history)
 	if err != nil {
 		respText = fmt.Sprintf("处理消息失败: %v", err)
 		logger.Error("larkbot: invoke agent failed", "err", err)
 	}
+	if agentCtx == nil {
+		agentCtx = ctx
+	}
 
 	scope := imoutbound.Scope{AgentID: cfg.AgentID, SessionID: sessionID}
-	replyText, fileNames := imoutbound.ParseFileMarkers(respText)
+	store := c.outbound
+	if store == nil {
+		store = imoutbound.GlobalStore()
+	}
 
-	if messageID != "" && strings.TrimSpace(replyText) != "" {
-		if err := c.replyMessage(ctx, cfg, messageID, replyText); err != nil {
+	out := imoutbound.DeliverIMReply(imoutbound.DeliverInput{
+		Channel: "lark", Ctx: ctx, AgentCtx: agentCtx, Scope: scope, Store: store,
+		UserRequest: userInput, AgentText: respText,
+	})
+	if imoutbound.NeedsFileRetry(userInput, respText, out.MarkerFiles, out.FileNames) {
+		logger.Warn("larkbot: IM file staging retry — agent did not register attachments",
+			"session_id", sessionID, "markers", out.MarkerFiles,
+			"pasted_content", imoutbound.ContainsSalvageableIMPayload(respText),
+			"user_input", truncateForLog(userInput, 80))
+		retryHistory := append(append([]*einoschema.Message{}, history...),
+			&einoschema.Message{Role: einoschema.User, Content: userInput},
+			&einoschema.Message{Role: einoschema.Assistant, Content: respText},
+		)
+		retryPrompt := imoutbound.BuildIMRetryPrompt(userInput, out.MarkerFiles)
+		respRetry, agentCtxRetry, retryErr := c.invokeAgent(ctx, runtime, cfg, retryPrompt, senderID, sessionID, retryHistory)
+		if retryErr != nil {
+			logger.Warn("larkbot: IM file staging retry failed", "err", retryErr)
+			if fb := imoutbound.RetryFailureUserText(userInput, "lark", retryErr); fb != "" {
+				out.Text = fb
+			}
+		} else {
+			respText = respRetry
+			if agentCtxRetry != nil {
+				agentCtx = agentCtxRetry
+			}
+			out = imoutbound.DeliverIMReply(imoutbound.DeliverInput{
+				Channel: "lark", Ctx: ctx, AgentCtx: agentCtx, Scope: scope, Store: store,
+				UserRequest: userInput, AgentText: respText,
+			})
+			logger.Info("larkbot: IM file staging retry done", "staged", imoutbound.RegisteredFilesFromContext(agentCtx), "to_send", out.FileNames)
+		}
+	}
+
+	target := MessageTarget{
+		ReplyMessageID: messageID,
+		ChatID:         chatID,
+		OpenID:         senderID,
+	}
+
+	if target.canReplyText() && strings.TrimSpace(out.Text) != "" {
+		if err := c.replyMessage(ctx, cfg, target.ReplyMessageID, out.Text); err != nil {
 			logger.Error("larkbot: reply send failed", "message_id", messageID, "err", err)
 		}
 	}
-	if messageID != "" && len(fileNames) > 0 {
-		c.sendOutboundFiles(ctx, cfg, messageID, scope, fileNames)
+	if len(out.FileNames) > 0 {
+		if target.canSendAttachment() {
+			c.sendOutboundFiles(ctx, cfg, target, scope, out.FileNames)
+		} else {
+			logger.Error("larkbot: have files to send but no chat_id/open_id", "files", out.FileNames)
+		}
 	}
 
 	if rec := imhistory.GlobalRecorder(); rec != nil && sessionID != "" {
@@ -495,17 +570,25 @@ func (c *Client) processIncomingMessage(appID, messageID, senderID, userInput st
 	}
 }
 
-func (c *Client) invokeAgent(ctx context.Context, runtime *agent.Runtime, cfg *BotConfig, userInput, larkUserID, sessionID string, history []*einoschema.Message) (string, error) {
+func (c *Client) invokeAgent(ctx context.Context, runtime *agent.Runtime, cfg *BotConfig, userInput, larkUserID, sessionID string, history []*einoschema.Message) (string, context.Context, error) {
 	timeout := cfg.InvokeTimeout
 	if timeout <= 0 {
 		timeout = 120
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	agentCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	memContext := larkFileSendSystemHint()
-	resp, err := runtime.ChatWithMemoryContext(ctx, cfg.AgentID, userInput, "", "", memContext, sessionID, larkUserID, history)
-	return resp, err
+	memContext := imoutbound.IMMemoryContextHint()
+	resp, err := runtime.ChatWithMemoryContext(agentCtx, cfg.AgentID, userInput, "", "", memContext, sessionID, larkUserID, history)
+	return resp, agentCtx, err
+}
+
+func truncateForLog(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
 }
 
 func getStringPtr(s *string) string {

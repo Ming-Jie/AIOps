@@ -27,6 +27,7 @@ export interface Skill {
   risk_level?: string
   execution_mode?: string
   is_active: boolean
+  created_by: number
   created_at: string
   updated_at?: string
 }
@@ -59,12 +60,12 @@ export interface MCPConfig {
   description?: string
   transport: string
   endpoint?: string
-  /** 后端返回的扩展字段（含 description、usage_hint、headers 等） */
   config?: Record<string, unknown>
   config_json?: string
   is_active: boolean
   health_status: string
   tool_count: number
+  created_by: number
   validation_status?: string
   tools?: MCPTool[]
   created_at: string
@@ -73,7 +74,6 @@ export interface MCPConfig {
 
 export interface Agent {
   id: number
-  /** Opaque id for URLs (e.g. /chat/:public_id); not the DB serial. */
   public_id: string
   name: string
   description: string
@@ -85,6 +85,9 @@ export interface Agent {
   skill_ids?: string[]
   mcp_config_ids?: number[]
   kb_ids?: number[]
+  chat_user_ids?: number[]
+  can_chat?: boolean
+  can_edit?: boolean
 }
 
 export interface RuntimeProfile {
@@ -115,6 +118,7 @@ export interface CreateAgentRequest {
   category: string
   is_active?: boolean
   runtime_profile?: RuntimeProfile
+  chat_user_ids?: number[]
 }
 
 export interface UpdateAgentRequest {
@@ -123,30 +127,20 @@ export interface UpdateAgentRequest {
   category?: string
   is_active?: boolean
   runtime_profile?: RuntimeProfile
-}
-
-export interface ChatResponseData {
-  message: string
-  session_id: string
-  agent_id?: number
-  workflow_id?: number
-  duration_ms?: number
+  chat_user_ids?: number[]
 }
 
 export interface ChatSession {
   session_id: string
   agent_id: number
   user_id?: string
-  /** 展示名：首条用户消息摘要或用户重命名 */
   title?: string
   created_at: string
   updated_at: string
-  /** IM 机器人会话：lark | telegram */
   im_channel?: string
   im_user_id?: string
 }
 
-/** ReAct / ADK 步骤快照（主聊天区内联展示；服务端历史消息通常无此字段） */
 export interface ChatReactStep {
   type: string
   data: Record<string, unknown>
@@ -154,16 +148,21 @@ export interface ChatReactStep {
   timestamp?: string
 }
 
+export interface FileAttachment {
+  filename: string
+  mime_type?: string
+  size?: number
+  inline?: string
+  url?: string
+}
+
 export interface ChatHistoryMessage {
   id: number
-  /** 发言所属智能体（群聊多智能体时用于气泡标题；单聊也有） */
   agent_id?: number
   role: string
   content: string
-  /** 图片地址列表（相对路径需经 resolveChatImageUrl / 同源拼接后用于 img src） */
   image_urls: string[]
   file_urls: string[]
-  /** 服务端 GET /messages 返回的 ReAct/ADK 步骤（SSE 快照） */
   react_steps?: unknown[]
   created_at: string
 }
@@ -174,59 +173,6 @@ export interface CreateSkillRequest {
   description?: string
   content?: string
   source_ref: string
-}
-
-export interface CreateMCPConfigRequest {
-  key: string
-  name: string
-  description?: string
-  transport?: string
-  endpoint?: string
-  config_json?: string
-  is_active?: boolean
-  tools_json?: string
-}
-
-export interface AgentWorkflow {
-  id: number
-  key: string
-  name: string
-  description: string
-  kind: string
-  step_agent_ids: number[]
-  config?: Record<string, unknown>
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface CreateWorkflowRequest {
-  key: string
-  name: string
-  description?: string
-  kind: string
-  step_agent_ids: number[]
-  config?: Record<string, unknown>
-  is_active?: boolean
-}
-
-export interface UpdateWorkflowRequest {
-  name?: string
-  description?: string
-  kind?: string
-  step_agent_ids?: number[]
-  config?: Record<string, unknown>
-  is_active?: boolean
-}
-
-export interface UpdateProfileRequest {
-  email?: string
-  full_name?: string
-}
-
-export interface ChangePasswordRequest {
-  current_password: string
-  new_password: string
 }
 
 export type Action = 1 | 2 | 4 | 8
@@ -264,33 +210,6 @@ export interface UserRole {
   role?: Role
 }
 
-export interface CreatePermissionRequest {
-  resource_type: string
-  resource_name: string
-  actions: Action
-  description?: string
-}
-
-export interface CreateRoleRequest {
-  name: string
-  description?: string
-  is_active?: boolean
-}
-
-export interface UpdateRoleRequest {
-  name?: string
-  description?: string
-  is_active?: boolean
-}
-
-export interface AssignRoleRequest {
-  role_id: number
-}
-
-export interface SetRolePermissionsRequest {
-  permission_ids: number[]
-}
-
 export interface MessageChannel {
   id: number
   name: string
@@ -303,24 +222,6 @@ export interface MessageChannel {
   is_active: boolean
   created_at: string
   updated_at: string
-}
-
-export interface CreateMessageChannelRequest {
-  name: string
-  agent_id: number
-  kind: string
-  description?: string
-  is_public?: boolean
-  metadata?: Record<string, string>
-  is_active?: boolean
-}
-
-export interface UpdateMessageChannelRequest {
-  name?: string
-  description?: string
-  is_public?: boolean
-  metadata?: Record<string, string>
-  is_active?: boolean
 }
 
 export interface AgentMessage {
@@ -340,42 +241,10 @@ export interface AgentMessage {
   delivered_at?: string
 }
 
-export interface SendMessageRequest {
-  from_agent_id: number
-  to_agent_id: number
-  channel_id?: number
-  session_id?: string
-  kind: string
-  content: string
-  metadata?: Record<string, unknown>
-  priority?: number
-}
-
-export interface MessageSendResponse {
-  message_id: number
-  status: string
-  delivered_at?: string
-}
-
-export interface MessageSpanRequest {
-  from_agent_id: number
-  to_agent_id: number
-  channel_id?: number
-  session_id?: string
-  content: string
-  metadata?: Record<string, unknown>
-}
-
-export interface MessageSpanResponse {
-  span_id: string
-  message_id: number
-  status: string
-  trace_id?: string
-}
-
 export interface A2ACard {
   id: number
   agent_id: number
+  agent_name?: string
   name: string
   description: string
   url: string
@@ -383,16 +252,6 @@ export interface A2ACard {
   capabilities?: string[]
   is_active: boolean
   created_at: string
-}
-
-export interface CreateA2ACardRequest {
-  agent_id: number
-  name: string
-  description?: string
-  url?: string
-  version?: string
-  capabilities?: string[]
-  is_active?: boolean
 }
 
 export interface WorkflowNode {
@@ -458,17 +317,9 @@ export interface UpdateWorkflowDefinitionRequest {
   is_active?: boolean
 }
 
-export interface ExecuteWorkflowRequest {
-  workflow_id: number
-  message: string
-  variables?: Record<string, unknown>
-}
-
 export interface ExecuteWorkflowResponse {
   output: unknown
-  /** Same as backend JSON key `node_results` */
   node_results?: Record<string, unknown>
-  /** Nodes finished in order (for canvas edge animation) */
   node_result_order?: string[]
   duration_ms: number
   execution_id?: number
@@ -498,7 +349,6 @@ export interface Schedule {
   workflow_id?: number
   workflow_name?: string
   agent_name?: string
-  /** python | shell | javascript — code task when set */
   code_language?: string
   channel_id?: number
   channel_name?: string
@@ -509,7 +359,6 @@ export interface Schedule {
   timezone?: string
   wake_mode: string
   session_target: string
-  /** Present after first run; same id as chat session list (open in UI). */
   chat_session_id?: string
   prompt: string
   stagger_ms: number
@@ -524,7 +373,6 @@ export interface CreateScheduleRequest {
   agent_id?: number
   workflow_id?: number
   channel_id?: number
-  /** python | shell | javascript — mutually exclusive with agent_id / workflow_id */
   code_language?: string
   schedule_kind: 'at' | 'every' | 'cron'
   cron_expr?: string
@@ -533,7 +381,6 @@ export interface CreateScheduleRequest {
   timezone?: string
   wake_mode?: string
   session_target?: string
-  /** User message (agent/workflow) or source code (code_language) */
   prompt: string
   stagger_ms?: number
   enabled?: boolean
@@ -558,18 +405,6 @@ export interface UpdateScheduleRequest {
   enabled?: boolean
 }
 
-export interface ScheduleExecution {
-  id: number
-  schedule_id: number
-  status: string
-  result?: string
-  error?: string
-  duration_ms: number
-  started_at: string
-  finished_at?: string
-}
-
-// Model config (UI-managed LLM provider configs)
 export interface ModelConfig {
   id: number
   name: string
@@ -584,47 +419,20 @@ export interface ModelConfig {
   updated_at: string
 }
 
-export interface CreateModelConfigRequest {
-  name: string
-  provider: string
-  model: string
-  base_url?: string
-  api_key?: string
-  config?: Record<string, unknown>
-  is_active?: boolean
-  purpose?: string
-}
-
-export interface UpdateModelConfigRequest {
-  name?: string
-  provider?: string
-  model?: string
-  base_url?: string
-  api_key?: string
-  config?: Record<string, unknown>
-  is_active?: boolean
-  purpose?: string
-}
-
-// Knowledge base (OpenViking backend)
 export interface KnowledgeBase {
   id: number
   owner_id: number
   name: string
   description: string
-  /** 'private' | 'public' */
   visibility: string
   viking_path: string
   doc_count: number
-  /** true if the current user is the creator of this KB */
   is_owner: boolean
-  /** true if the current user can manage this KB (owner or admin) */
   can_manage: boolean
   created_at: string
   updated_at: string
 }
 
-/** Document status: pending | indexing | indexed | failed */
 export interface KBDocument {
   id: number
   kb_id: number
@@ -653,7 +461,6 @@ export interface KBSearchHit {
   uri: string
   abstract: string
   overview?: string
-  /** Hydrated raw chunk text from content/read (preferred over abstract). */
   content?: string
   score: number
   context_type: string

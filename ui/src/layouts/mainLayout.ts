@@ -2,7 +2,7 @@ import axios from 'axios'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LocalStorage, useQuasar } from 'quasar'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from 'boot/axios'
 import type { UserResponse } from 'src/api/types'
 import { clearAdminCache, setAdminCache } from 'src/auth/adminCache'
@@ -13,12 +13,17 @@ export function useMainLayout () {
   const { t, locale } = useI18n()
   const $q = useQuasar()
   const router = useRouter()
+  const route = useRoute()
   const leftDrawer = ref(false)
   const me = ref<UserResponse | null>(null)
   const meLoaded = ref(false)
 
   const userLabel = computed(() => me.value?.username ?? '')
   const isAdmin = computed(() => me.value?.is_admin === true)
+
+  /** 子页面（如 team-chat、knowledge-detail）仍高亮父级菜单 */
+  const isTeamsNavActive = computed(() => route.path.startsWith('/teams'))
+  const isKnowledgeNavActive = computed(() => route.path.startsWith('/knowledge'))
 
   /** Lark 等 SSO 同步的头像 URL，来自 /auth/me */
   const avatarUrl = computed(() => {
@@ -71,5 +76,18 @@ export function useMainLayout () {
     locale.value = lang
   }
 
-  return { t, locale, setLocale, leftDrawer, userLabel, avatarUrl, meLoaded, isAdmin, onLogout, goProfile }
+  return {
+    t,
+    locale,
+    setLocale,
+    leftDrawer,
+    userLabel,
+    avatarUrl,
+    meLoaded,
+    isAdmin,
+    isTeamsNavActive,
+    isKnowledgeNavActive,
+    onLogout,
+    goProfile
+  }
 }

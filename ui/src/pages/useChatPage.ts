@@ -354,7 +354,8 @@ function createChatPageState () {
     void nextTick(() => {
       const el = chatScrollRef.value
       if (!el) return
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      // 流式传输中用 auto 避免 smooth 动画与内容增长互相拉扯导致抖动
+      el.scrollTo({ top: el.scrollHeight, behavior: sending.value ? 'auto' : 'smooth' })
     })
   }
 
@@ -678,8 +679,11 @@ function createChatPageState () {
     const yesterdayKey = dayKeyLocal(yesterdayDate.toISOString())
     const out: { key: string; label: string; items: ChatSession[] }[] = []
     for (const [key, items] of grouped) {
+      const sortedItems = [...items].sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      )
       const label = key === todayKey ? t('chatSessionGroupToday') : key === yesterdayKey ? t('chatSessionGroupYesterday') : t('chatSessionGroupEarlier')
-      out.push({ key, label, items })
+      out.push({ key, label, items: sortedItems })
     }
     return out.sort((a, b) => b.key.localeCompare(a.key))
   }
@@ -1243,14 +1247,6 @@ function createChatPageState () {
     document.removeEventListener('visibilitychange', onDocumentVisibility)
     window.removeEventListener('keydown', onEscStopStream)
   })
-
-  watch(
-    displayMessages,
-    () => {
-      scrollChatToBottom()
-    },
-    { deep: true }
-  )
 
   watch(sending, v => {
     if (!v) scrollChatToBottom()

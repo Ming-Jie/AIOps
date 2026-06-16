@@ -543,18 +543,21 @@ func (c *Client) handleBatch(appID string, batch []*pendingDtMsg) {
 	}
 
 	scope := imoutbound.Scope{AgentID: cfg.AgentID, SessionID: sessionID}
-	replyText, fileNames := imoutbound.ParseFileMarkers(respText)
+	out := imoutbound.DeliverIMReply(imoutbound.DeliverInput{
+		Channel: "dingtalk", Ctx: ctx, AgentCtx: ctx, Scope: scope, Store: imoutbound.GlobalStore(),
+		UserRequest: userInput, AgentText: respText,
+	})
 
 	replyCtx, replyCancel := replyContext(ctx)
 	defer replyCancel()
 
-	if strings.TrimSpace(replyText) != "" {
-		if err := c.replySessionMessage(replyCtx, cfg, sessionWebhook, replyText); err != nil {
+	if strings.TrimSpace(out.Text) != "" {
+		if err := c.replySessionMessage(replyCtx, cfg, sessionWebhook, out.Text); err != nil {
 			logger.Warn("dingtalkbot: send reply failed", "err", err, "app_id", appID)
 		}
 	}
-	if len(fileNames) > 0 {
-		failed := c.sendOutboundFiles(replyCtx, cfg, sessionWebhook, scope, fileNames)
+	if len(out.FileNames) > 0 {
+		failed := c.sendOutboundFiles(replyCtx, cfg, sessionWebhook, scope, out.FileNames)
 		if len(failed) > 0 {
 			hint := fmt.Sprintf("⚠️ 以下附件发送失败：%s", strings.Join(failed, ", "))
 			_ = c.replySessionMessage(replyCtx, cfg, sessionWebhook, hint)
@@ -567,7 +570,7 @@ func (c *Client) handleBatch(appID string, batch []*pendingDtMsg) {
 }
 
 func (c *Client) invokeAgent(ctx context.Context, runtime *agent.Runtime, cfg *BotConfig, userInput, auditUserID, sessionID string, history []*einoschema.Message) (string, error) {
-	memContext := dingtalkFileSendSystemHint()
+	memContext := imoutbound.IMMemoryContextHint()
 	return runtime.ChatWithMemoryContext(ctx, cfg.AgentID, userInput, "", "", memContext, sessionID, auditUserID, history)
 }
 

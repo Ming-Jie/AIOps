@@ -4,29 +4,48 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fisk086/aiops/internal/model"
 )
 
-func (s *PostgresStorage) buildApprovalRequestWhere(filter *ApprovalRequestFilter) string {
-	where := "1=1"
+func (s *PostgresStorage) buildApprovalRequestWhere(filter *ApprovalRequestFilter) (string, []any) {
+	if filter == nil {
+		return "1=1", nil
+	}
+	var clauses []string
+	var args []any
+	n := 0
 	if filter.AgentID != 0 {
-		where += fmt.Sprintf(" AND agent_id = %d", filter.AgentID)
+		n++
+		clauses = append(clauses, fmt.Sprintf("agent_id = $%d", n))
+		args = append(args, filter.AgentID)
 	}
 	if filter.SessionID != "" {
-		where += fmt.Sprintf(" AND session_id = '%s'", filter.SessionID)
+		n++
+		clauses = append(clauses, fmt.Sprintf("session_id = $%d", n))
+		args = append(args, filter.SessionID)
 	}
 	if filter.Status != "" {
-		where += fmt.Sprintf(" AND status = '%s'", filter.Status)
+		n++
+		clauses = append(clauses, fmt.Sprintf("status = $%d", n))
+		args = append(args, filter.Status)
 	}
 	if filter.ExternalID != "" {
-		where += fmt.Sprintf(" AND external_id = '%s'", filter.ExternalID)
+		n++
+		clauses = append(clauses, fmt.Sprintf("external_id = $%d", n))
+		args = append(args, filter.ExternalID)
 	}
 	if filter.UserID != "" {
-		where += fmt.Sprintf(" AND user_id = '%s'", filter.UserID)
+		n++
+		clauses = append(clauses, fmt.Sprintf("user_id = $%d", n))
+		args = append(args, filter.UserID)
 	}
-	return where
+	if len(clauses) == 0 {
+		return "1=1", nil
+	}
+	return strings.Join(clauses, " AND "), args
 }
 
 func (s *PostgresStorage) CreateApprovalRequest(req *model.ApprovalRequest) (*model.ApprovalRequest, error) {
@@ -51,11 +70,11 @@ func (s *PostgresStorage) CreateApprovalRequest(req *model.ApprovalRequest) (*mo
 }
 
 func (s *PostgresStorage) ListApprovalRequests(filter *ApprovalRequestFilter) ([]*model.ApprovalRequest, int64, error) {
-	where := s.buildApprovalRequestWhere(filter)
+	where, args := s.buildApprovalRequestWhere(filter)
 
 	var total int64
 	err := s.pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM approval_requests WHERE "+where,
+		"SELECT COUNT(*) FROM approval_requests WHERE "+where, args...,
 	).Scan(&total)
 	if err != nil {
 		return nil, 0, err
@@ -73,10 +92,11 @@ func (s *PostgresStorage) ListApprovalRequests(filter *ApprovalRequestFilter) ([
 	}
 	offset := (page - 1) * pageSize
 
-	rows, err := s.pool.Query(context.Background(),
-		fmt.Sprintf(`SELECT id, agent_id, session_id, user_id, tool_name, risk_level, input, status, approver_id, comment, approved_at, created_at, approval_type, external_id, expires_at
-			FROM approval_requests WHERE %s ORDER BY created_at DESC LIMIT %d OFFSET %d`, where, pageSize, offset),
-	)
+	n := len(args)
+	query := fmt.Sprintf(`SELECT id, agent_id, session_id, user_id, tool_name, risk_level, input, status, approver_id, comment, approved_at, created_at, approval_type, external_id, expires_at
+		FROM approval_requests WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, n+1, n+2)
+	qargs := append(args, pageSize, offset)
+	rows, err := s.pool.Query(context.Background(), query, qargs...)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -2,15 +2,18 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/fisk086/aiops/internal/auth"
 	"github.com/fisk086/aiops/internal/logger"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/storage"
 	"github.com/fisk086/aiops/internal/telegrambot"
 )
 
@@ -21,27 +24,57 @@ type TelegramBotStatus struct {
 	IsRunning bool   `json:"is_running"`
 }
 
-func NewTelegramBotController(agentService *service.AgentService) *TelegramBotController {
-	return &TelegramBotController{agentService: agentService}
+func NewTelegramBotController(agentService *service.AgentService, jwtCfg auth.JWTConfig, userStore storage.UserStore, rbacService ...*service.RBACService) *TelegramBotController {
+	ctrl := &TelegramBotController{agentService: agentService, jwtCfg: jwtCfg, userStore: userStore}
+	if len(rbacService) > 0 {
+		ctrl.rbacService = rbacService[0]
+	}
+	return ctrl
 }
 
 type TelegramBotController struct {
 	agentService *service.AgentService
+	jwtCfg       auth.JWTConfig
+	userStore    storage.UserStore
+	rbacService  *service.RBACService
+}
+
+func (c *TelegramBotController) getUserForMiddleware(userID int64) (*auth.User, error) {
+	if c.userStore == nil {
+		return nil, errors.New("user store not configured")
+	}
+	user, err := c.userStore.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.User{
+		ID:       user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		Status:   string(user.Status),
+		IsAdmin:  user.IsAdmin,
+	}, nil
 }
 
 func (c *TelegramBotController) RegisterRoutes(r *server.Hertz) {
-	r.GET("/api/v1/telegrambots", c.ListBots)
-	r.POST("/api/v1/telegrambots/start", c.Start)
-	r.POST("/api/v1/telegrambots/stop", c.Stop)
-	r.POST("/api/v1/telegrambots/:agentId/register", c.RegisterForAgent)
-	r.POST("/api/v1/telegrambots/:agentId/ws/start", c.StartAgentWS)
-	r.POST("/api/v1/telegrambots/:agentId/ws/stop", c.StopAgentWS)
-	r.DELETE("/api/v1/telegrambots/:agentId", c.UnregisterForAgent)
-	r.POST("/api/v1/telegrambots/webhook/:agentId", c.Webhook)
+	g := r.Group("/api/v1")
+	if c.userStore != nil {
+		g.Use(auth.JWTMiddleware(c.jwtCfg, c.getUserForMiddleware))
+	}
+	g.GET("/telegrambots", c.ListBots)
+	g.POST("/telegrambots/start", c.Start)
+	g.POST("/telegrambots/stop", c.Stop)
+	g.POST("/telegrambots/:agentId/register", c.RegisterForAgent)
+	g.POST("/telegrambots/:agentId/ws/start", c.StartAgentWS)
+	g.POST("/telegrambots/:agentId/ws/stop", c.StopAgentWS)
+	g.DELETE("/telegrambots/:agentId", c.UnregisterForAgent)
+	g.POST("/telegrambots/webhook/:agentId", c.Webhook)
 }
 
 func (c *TelegramBotController) ListBots(ctx context.Context, hc *app.RequestContext) {
 	client := telegrambot.Global()
+
+	user := auth.GetCurrentUser(hc)
 
 	var entries []TelegramBotStatus
 	if c.agentService != nil {
@@ -53,6 +86,11 @@ func (c *TelegramBotController) ListBots(ctx context.Context, hc *app.RequestCon
 		for _, a := range agents {
 			if a == nil {
 				continue
+			}
+			if c.rbacService != nil && user != nil && !user.IsAdmin {
+				if !c.rbacService.CheckAgentAccess(ctx, user.ID, a.Name, user.IsAdmin) {
+					continue
+				}
 			}
 			full, err := c.agentService.GetAgent(a.ID)
 			if err != nil || full == nil || full.RuntimeProfile == nil {
@@ -94,6 +132,33 @@ func (c *TelegramBotController) ListBots(ctx context.Context, hc *app.RequestCon
 	}))
 }
 
+func (c *TelegramBotController) persistAllTelegramWsEnabled(enabled bool) {
+	ctrl := GetAgentController()
+	if ctrl == nil || c.agentService == nil {
+		return
+	}
+	agents, err := c.agentService.ListAgents()
+	if err != nil {
+		logger.Warn("telegrambot: list agents for ws_enabled persist failed", "err", err)
+		return
+	}
+	for _, a := range agents {
+		if a == nil {
+			continue
+		}
+		full, err := c.agentService.GetAgent(a.ID)
+		if err != nil || full == nil || full.RuntimeProfile == nil {
+			continue
+		}
+		if full.RuntimeProfile.IMEnabled != "telegram" || full.RuntimeProfile.IMConfig.TelegramToken == "" {
+			continue
+		}
+		if err := ctrl.SetTelegramIMWsEnabled(a.ID, enabled); err != nil {
+			logger.Warn("telegrambot: persist ws_enabled failed", "agent_id", a.ID, "enabled", enabled, "err", err)
+		}
+	}
+}
+
 func (c *TelegramBotController) Start(ctx context.Context, hc *app.RequestContext) {
 	client := telegrambot.Global()
 
@@ -102,7 +167,14 @@ func (c *TelegramBotController) Start(ctx context.Context, hc *app.RequestContex
 		return
 	}
 
+	c.persistAllTelegramWsEnabled(true)
+
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("telegrambot start panicked", "recover", r)
+			}
+		}()
 		client.Start(ctx)
 	}()
 
@@ -115,6 +187,7 @@ func (c *TelegramBotController) Start(ctx context.Context, hc *app.RequestContex
 func (c *TelegramBotController) Stop(ctx context.Context, hc *app.RequestContext) {
 	client := telegrambot.Global()
 	client.Stop()
+	c.persistAllTelegramWsEnabled(false)
 
 	hc.JSON(http.StatusOK, schema.SuccessResponse(map[string]any{
 		"stopped": true,

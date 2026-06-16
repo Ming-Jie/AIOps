@@ -4,8 +4,10 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/fisk086/aiops/internal/auth"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/storage"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
@@ -13,29 +15,43 @@ import (
 
 type MessageController struct {
 	messageService *service.MessageService
+	jwtCfg         auth.JWTConfig
+	userStore      storage.UserStore
 }
 
-func NewMessageController(messageService *service.MessageService) *MessageController {
-	return &MessageController{messageService: messageService}
+func NewMessageController(messageService *service.MessageService, jwtCfg auth.JWTConfig, userStore storage.UserStore) *MessageController {
+	return &MessageController{messageService: messageService, jwtCfg: jwtCfg, userStore: userStore}
 }
 
 func (ctrl *MessageController) RegisterRoutes(h *server.Hertz) {
-	v1 := h.Group("/api/v1")
+	g := h.Group("/api/v1")
+	if ctrl.userStore != nil {
+		g.Use(auth.JWTMiddleware(ctrl.jwtCfg, ctrl.getUserForMiddleware))
+	}
 
-	v1.POST("/messages/send", ctrl.SendMessage)
-	v1.POST("/messages/span", ctrl.SendSpan)
-	v1.GET("/messages", ctrl.ListMessages)
+	g.POST("/messages/send", ctrl.SendMessage)
+	g.POST("/messages/span", ctrl.SendSpan)
+	g.GET("/messages", ctrl.ListMessages)
 
-	v1.POST("/message-channels", ctrl.CreateChannel)
-	v1.GET("/message-channels", ctrl.ListChannels)
-	v1.GET("/message-channels/:id", ctrl.GetChannel)
-	v1.PUT("/message-channels/:id", ctrl.UpdateChannel)
-	v1.DELETE("/message-channels/:id", ctrl.DeleteChannel)
+	g.POST("/message-channels", ctrl.CreateChannel)
+	g.GET("/message-channels", ctrl.ListChannels)
+	g.GET("/message-channels/:id", ctrl.GetChannel)
+	g.PUT("/message-channels/:id", ctrl.UpdateChannel)
+	g.DELETE("/message-channels/:id", ctrl.DeleteChannel)
 
-	v1.POST("/a2a-cards", ctrl.CreateA2ACard)
-	v1.GET("/a2a-cards", ctrl.ListA2ACards)
-	v1.GET("/a2a-cards/:id", ctrl.GetA2ACard)
-	v1.DELETE("/a2a-cards/:id", ctrl.DeleteA2ACard)
+	g.POST("/a2a-cards", ctrl.CreateA2ACard)
+	g.GET("/a2a-cards", ctrl.ListA2ACards)
+	g.GET("/a2a-cards/:id", ctrl.GetA2ACard)
+	g.PUT("/a2a-cards/:id", ctrl.UpdateA2ACard)
+	g.DELETE("/a2a-cards/:id", ctrl.DeleteA2ACard)
+}
+
+func (ctrl *MessageController) getUserForMiddleware(userID int64) (*auth.User, error) {
+	user, err := ctrl.userStore.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.User{ID: user.ID, Username: user.Username, Email: user.Email, Status: string(user.Status), IsAdmin: user.IsAdmin}, nil
 }
 
 func (ctrl *MessageController) SendMessage(c context.Context, ctx *app.RequestContext) {
@@ -138,20 +154,13 @@ func (ctrl *MessageController) ListChannels(c context.Context, ctx *app.RequestC
 func (ctrl *MessageController) GetChannel(c context.Context, ctx *app.RequestContext) {
 	id := parseInt64Param(ctx, "id")
 
-	channels, err := ctrl.messageService.ListChannels(0)
+	ch, err := ctrl.messageService.GetChannel(id)
 	if err != nil {
-		ctx.JSON(consts.StatusInternalServerError, schema.ErrorResponse(err.Error()))
+		ctx.JSON(consts.StatusNotFound, schema.ErrorResponse("channel not found"))
 		return
 	}
 
-	for _, ch := range channels {
-		if ch.ID == id {
-			ctx.JSON(consts.StatusOK, schema.SuccessResponse(ch))
-			return
-		}
-	}
-
-	ctx.JSON(consts.StatusNotFound, schema.ErrorResponse("channel not found"))
+	ctx.JSON(consts.StatusOK, schema.SuccessResponse(ch))
 }
 
 func (ctrl *MessageController) UpdateChannel(c context.Context, ctx *app.RequestContext) {
@@ -217,6 +226,24 @@ func (ctrl *MessageController) GetA2ACard(c context.Context, ctx *app.RequestCon
 	card, err := ctrl.messageService.GetA2ACard(id)
 	if err != nil {
 		ctx.JSON(consts.StatusNotFound, schema.ErrorResponse("card not found"))
+		return
+	}
+
+	ctx.JSON(consts.StatusOK, schema.SuccessResponse(card))
+}
+
+func (ctrl *MessageController) UpdateA2ACard(c context.Context, ctx *app.RequestContext) {
+	id := parseInt64Param(ctx, "id")
+
+	var req schema.UpdateA2ACardRequest
+	if err := ctx.BindAndValidate(&req); err != nil {
+		ctx.JSON(consts.StatusBadRequest, schema.ErrorResponse(err.Error()))
+		return
+	}
+
+	card, err := ctrl.messageService.UpdateA2ACard(id, &req)
+	if err != nil {
+		ctx.JSON(consts.StatusInternalServerError, schema.ErrorResponse(err.Error()))
 		return
 	}
 

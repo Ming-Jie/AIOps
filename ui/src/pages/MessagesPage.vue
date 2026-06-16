@@ -24,7 +24,7 @@
           <q-btn color="primary" :label="t('createChannel')" icon="add" class="q-mr-sm" unelevated rounded @click="openChannelDialog()" />
         </div>
 
-        <q-table flat bordered :rows="channelRows" :columns="channelColumns" row-key="id" :loading="loading" no-data-label="暂无数据">
+        <q-table flat bordered class="q-table--soft radius-md" :rows="channelRows" :columns="channelColumns" row-key="id" :loading="loading" no-data-label="暂无数据">
           <template #body-cell-is_public="props">
             <q-td :props="props">
               <q-badge :color="props.row.is_public ? 'blue' : 'grey'" :label="props.row.is_public ? '公开' : '私有'" />
@@ -155,7 +155,7 @@
           <q-btn color="secondary" label="发送 Span" icon="timeline" unelevated rounded @click="openMessageDialog()" />
         </div>
 
-        <q-table flat bordered :rows="messageRows" :columns="messageColumns" row-key="id" :loading="loading" no-data-label="暂无消息">
+        <q-table flat bordered class="q-table--soft radius-md" :rows="messageRows" :columns="messageColumns" row-key="id" :loading="loading" no-data-label="暂无消息">
           <template #body-cell-content="props">
             <q-td :props="props">
               <span class="ellipsis block" style="max-width: 300px;">{{ props.row.content }}</span>
@@ -258,7 +258,7 @@
           <q-btn color="primary" label="创建 A2A 卡片" icon="add" class="q-mr-sm" unelevated rounded @click="openA2ADialog()" />
         </div>
 
-        <q-table flat bordered :rows="a2aRows" :columns="a2aColumns" row-key="id" :loading="loading" no-data-label="暂无数据">
+        <q-table flat bordered class="q-table--soft radius-md" :rows="a2aRows" :columns="a2aColumns" row-key="id" :loading="loading" no-data-label="暂无数据">
           <template #body-cell-url="props">
             <q-td :props="props">
               <span class="ellipsis block" style="max-width: 250px;">{{ props.row.url || '—' }}</span>

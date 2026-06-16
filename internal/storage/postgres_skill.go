@@ -13,7 +13,7 @@ import (
 const skillSelectCols = `id, key, name,
 		COALESCE(description,''), COALESCE(content,''), COALESCE(source_ref,''),
 		COALESCE(risk_level,''), COALESCE(execution_mode,''), COALESCE(prompt_hint,''),
-		COALESCE(is_active, true), created_at, COALESCE(updated_at, created_at)`
+		COALESCE(is_active, true), COALESCE(created_by, 0), created_at, COALESCE(updated_at, created_at)`
 
 func (s *PostgresStorage) ListSkills() ([]*schema.Skill, error) {
 	rows, err := s.pool.Query(context.Background(),
@@ -26,7 +26,7 @@ func (s *PostgresStorage) ListSkills() ([]*schema.Skill, error) {
 	var skills []*schema.Skill
 	for rows.Next() {
 		var sk schema.Skill
-		if err := rows.Scan(&sk.ID, &sk.Key, &sk.Name, &sk.Description, &sk.Content, &sk.SourceRef, &sk.RiskLevel, &sk.ExecutionMode, &sk.PromptHint, &sk.IsActive, &sk.CreatedAt, &sk.UpdatedAt); err != nil {
+		if err := rows.Scan(&sk.ID, &sk.Key, &sk.Name, &sk.Description, &sk.Content, &sk.SourceRef, &sk.RiskLevel, &sk.ExecutionMode, &sk.PromptHint, &sk.IsActive, &sk.CreatedBy, &sk.CreatedAt, &sk.UpdatedAt); err != nil {
 			return nil, err
 		}
 		skills = append(skills, &sk)
@@ -41,14 +41,14 @@ func (s *PostgresStorage) GetSkill(id int64) (*schema.Skill, error) {
 	var sk schema.Skill
 	err := s.pool.QueryRow(context.Background(),
 		`SELECT `+skillSelectCols+` FROM skills WHERE id = $1`, id).
-		Scan(&sk.ID, &sk.Key, &sk.Name, &sk.Description, &sk.Content, &sk.SourceRef, &sk.RiskLevel, &sk.ExecutionMode, &sk.PromptHint, &sk.IsActive, &sk.CreatedAt, &sk.UpdatedAt)
+		Scan(&sk.ID, &sk.Key, &sk.Name, &sk.Description, &sk.Content, &sk.SourceRef, &sk.RiskLevel, &sk.ExecutionMode, &sk.PromptHint, &sk.IsActive, &sk.CreatedBy, &sk.CreatedAt, &sk.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &sk, nil
 }
 
-func (s *PostgresStorage) CreateSkill(req *schema.CreateSkillRequest) (*schema.Skill, error) {
+func (s *PostgresStorage) CreateSkill(req *schema.CreateSkillRequest, createdBy int64) (*schema.Skill, error) {
 	var id int64
 	var createdAt, updatedAt time.Time
 	content := req.Content
@@ -56,12 +56,12 @@ func (s *PostgresStorage) CreateSkill(req *schema.CreateSkillRequest) (*schema.S
 		content = fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n\n# %s\n\n%s", req.Name, req.Description, req.Name, req.Description)
 	}
 	err := s.pool.QueryRow(context.Background(),
-		`INSERT INTO skills (key, name, description, content, source_ref, risk_level, execution_mode, prompt_hint) VALUES ($1, $2, $3, $4, $5, $6, '', '') RETURNING id, created_at, updated_at`,
-		req.Key, req.Name, req.Description, content, req.SourceRef, schema.RiskLevelLow).Scan(&id, &createdAt, &updatedAt)
+		`INSERT INTO skills (key, name, description, content, source_ref, risk_level, execution_mode, prompt_hint, created_by) VALUES ($1, $2, $3, $4, $5, $6, '', '', $7) RETURNING id, created_at, updated_at`,
+		req.Key, req.Name, req.Description, content, req.SourceRef, schema.RiskLevelLow, createdBy).Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
-	return &schema.Skill{ID: id, Key: req.Key, Name: req.Name, Description: req.Description, Content: content, SourceRef: req.SourceRef, RiskLevel: schema.RiskLevelLow, IsActive: true, CreatedAt: createdAt, UpdatedAt: updatedAt}, nil
+	return &schema.Skill{ID: id, Key: req.Key, Name: req.Name, Description: req.Description, Content: content, SourceRef: req.SourceRef, RiskLevel: schema.RiskLevelLow, IsActive: true, CreatedBy: createdBy, CreatedAt: createdAt, UpdatedAt: updatedAt}, nil
 }
 
 func (s *PostgresStorage) UpdateSkill(id int64, req *schema.UpdateSkillRequest) (*schema.Skill, error) {
@@ -133,14 +133,14 @@ func (s *PostgresStorage) GetSkillByKey(key string) (*schema.Skill, error) {
 	var sk schema.Skill
 	err := s.pool.QueryRow(context.Background(),
 		`SELECT `+skillSelectCols+` FROM skills WHERE key = $1`, key).
-		Scan(&sk.ID, &sk.Key, &sk.Name, &sk.Description, &sk.Content, &sk.SourceRef, &sk.RiskLevel, &sk.ExecutionMode, &sk.PromptHint, &sk.IsActive, &sk.CreatedAt, &sk.UpdatedAt)
+		Scan(&sk.ID, &sk.Key, &sk.Name, &sk.Description, &sk.Content, &sk.SourceRef, &sk.RiskLevel, &sk.ExecutionMode, &sk.PromptHint, &sk.IsActive, &sk.CreatedBy, &sk.CreatedAt, &sk.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &sk, nil
 }
 
-func (s *PostgresStorage) UpsertSkill(req *schema.CreateSkillRequest) (*schema.Skill, error) {
+func (s *PostgresStorage) UpsertSkill(req *schema.CreateSkillRequest, createdBy int64) (*schema.Skill, error) {
 	var id int64
 	var createdAt, updatedAt time.Time
 	content := req.Content
@@ -148,8 +148,8 @@ func (s *PostgresStorage) UpsertSkill(req *schema.CreateSkillRequest) (*schema.S
 		content = fmt.Sprintf("---\nname: %s\ndescription: %s\n---\n\n# %s\n\n%s", req.Name, req.Description, req.Name, req.Description)
 	}
 	err := s.pool.QueryRow(context.Background(),
-		`INSERT INTO skills (key, name, description, content, source_ref, risk_level, execution_mode, prompt_hint)
-		 VALUES ($1, $2, $3, $4, $5, $6, '', '')
+		`INSERT INTO skills (key, name, description, content, source_ref, risk_level, execution_mode, prompt_hint, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, '', '', $7)
 		 ON CONFLICT (key) DO UPDATE SET
 		   name = EXCLUDED.name,
 		   description = EXCLUDED.description,
@@ -157,9 +157,9 @@ func (s *PostgresStorage) UpsertSkill(req *schema.CreateSkillRequest) (*schema.S
 		   source_ref = EXCLUDED.source_ref,
 		   updated_at = NOW()
 		 RETURNING id, created_at, updated_at`,
-		req.Key, req.Name, req.Description, content, req.SourceRef, schema.RiskLevelLow).Scan(&id, &createdAt, &updatedAt)
+		req.Key, req.Name, req.Description, content, req.SourceRef, schema.RiskLevelLow, createdBy).Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
-	return &schema.Skill{ID: id, Key: req.Key, Name: req.Name, Description: req.Description, Content: content, SourceRef: req.SourceRef, RiskLevel: schema.RiskLevelLow, IsActive: true, CreatedAt: createdAt, UpdatedAt: updatedAt}, nil
+	return &schema.Skill{ID: id, Key: req.Key, Name: req.Name, Description: req.Description, Content: content, SourceRef: req.SourceRef, RiskLevel: schema.RiskLevelLow, IsActive: true, CreatedBy: createdBy, CreatedAt: createdAt, UpdatedAt: updatedAt}, nil
 }

@@ -12,7 +12,7 @@ import (
 )
 
 func (s *PostgresStorage) ListMCPConfigs() ([]*schema.MCPConfig, error) {
-	rows, err := s.pool.Query(context.Background(), `SELECT id, key, name, transport, endpoint, config, is_active, health_status, tool_count, created_at FROM mcp_configs ORDER BY id`)
+	rows, err := s.pool.Query(context.Background(), `SELECT id, key, name, transport, endpoint, config, is_active, health_status, tool_count, COALESCE(created_by, 0), created_at FROM mcp_configs ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +22,7 @@ func (s *PostgresStorage) ListMCPConfigs() ([]*schema.MCPConfig, error) {
 	for rows.Next() {
 		var cfg schema.MCPConfig
 		var configJSON []byte
-		if err := rows.Scan(&cfg.ID, &cfg.Key, &cfg.Name, &cfg.Transport, &cfg.Endpoint, &configJSON, &cfg.IsActive, &cfg.HealthStatus, &cfg.ToolCount, &cfg.CreatedAt); err != nil {
+		if err := rows.Scan(&cfg.ID, &cfg.Key, &cfg.Name, &cfg.Transport, &cfg.Endpoint, &configJSON, &cfg.IsActive, &cfg.HealthStatus, &cfg.ToolCount, &cfg.CreatedBy, &cfg.CreatedAt); err != nil {
 			return nil, err
 		}
 		if configJSON != nil {
@@ -39,8 +39,8 @@ func (s *PostgresStorage) GetMCPConfig(id int64) (*schema.MCPConfig, error) {
 	var cfg schema.MCPConfig
 	var configJSON []byte
 	err := s.pool.QueryRow(context.Background(),
-		`SELECT id, key, name, transport, endpoint, config, is_active, health_status, tool_count, created_at FROM mcp_configs WHERE id = $1`, id).
-		Scan(&cfg.ID, &cfg.Key, &cfg.Name, &cfg.Transport, &cfg.Endpoint, &configJSON, &cfg.IsActive, &cfg.HealthStatus, &cfg.ToolCount, &cfg.CreatedAt)
+		`SELECT id, key, name, transport, endpoint, config, is_active, health_status, tool_count, COALESCE(created_by, 0), created_at FROM mcp_configs WHERE id = $1`, id).
+		Scan(&cfg.ID, &cfg.Key, &cfg.Name, &cfg.Transport, &cfg.Endpoint, &configJSON, &cfg.IsActive, &cfg.HealthStatus, &cfg.ToolCount, &cfg.CreatedBy, &cfg.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrMCPConfigNotFound
@@ -87,7 +87,7 @@ func (s *PostgresStorage) ListMCPTools(configID int64) ([]schema.MCPServer, erro
 	return out, nil
 }
 
-func (s *PostgresStorage) CreateMCPConfig(req *schema.CreateMCPConfigRequest) (*schema.MCPConfig, error) {
+func (s *PostgresStorage) CreateMCPConfig(req *schema.CreateMCPConfigRequest, createdBy int64) (*schema.MCPConfig, error) {
 	configJSON, err := json.Marshal(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal config: %w", err)
@@ -95,12 +95,12 @@ func (s *PostgresStorage) CreateMCPConfig(req *schema.CreateMCPConfigRequest) (*
 	var id int64
 	var now time.Time
 	err = s.pool.QueryRow(context.Background(),
-		`INSERT INTO mcp_configs (key, name, transport, endpoint, config) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
-		req.Key, req.Name, req.Transport, req.Endpoint, configJSON).Scan(&id, &now)
+		`INSERT INTO mcp_configs (key, name, transport, endpoint, config, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
+		req.Key, req.Name, req.Transport, req.Endpoint, configJSON, createdBy).Scan(&id, &now)
 	if err != nil {
 		return nil, err
 	}
-	return &schema.MCPConfig{ID: id, Key: req.Key, Name: req.Name, Transport: req.Transport, Endpoint: req.Endpoint, Config: req.Config, IsActive: true, HealthStatus: "unknown", CreatedAt: now}, nil
+	return &schema.MCPConfig{ID: id, Key: req.Key, Name: req.Name, Transport: req.Transport, Endpoint: req.Endpoint, Config: req.Config, IsActive: true, HealthStatus: "unknown", CreatedBy: createdBy, CreatedAt: now}, nil
 }
 
 func (s *PostgresStorage) UpdateMCPConfig(id int64, req *schema.CreateMCPConfigRequest) (*schema.MCPConfig, error) {

@@ -26,7 +26,7 @@
     <q-table
       flat
       bordered
-      class="radius-sm"
+      class="radius-md q-table--soft"
       :rows="bots"
       :columns="columns"
       row-key="agent_id"
@@ -36,8 +36,8 @@
       <template #body-cell-bot_type="props">
         <q-td :props="props">
           <q-badge
-            :color="props.row.bot_type === 'lark' ? 'blue' : props.row.bot_type === 'dingtalk' ? 'orange' : 'primary'"
-            :label="props.row.bot_type === 'lark' ? '飞书' : props.row.bot_type === 'dingtalk' ? '钉钉' : 'Telegram'"
+            :color="botTypeColor(props.row.bot_type)"
+            :label="botTypeLabel(props.row.bot_type)"
           />
         </q-td>
       </template>
@@ -143,6 +143,8 @@ const {
   historyAgentId,
   historyAgentName,
   historyChannel,
-  openHistory
+  openHistory,
+  botTypeColor,
+  botTypeLabel
 } = useBotPage()
 </script>

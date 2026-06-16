@@ -168,7 +168,7 @@ function onSsoLogin () {
   min-height: 100vh;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(145deg, #ecfeff 0%, #f0fdfa 32%, #f8fafc 68%, #e0f2fe 100%);
+  background: linear-gradient(145deg, #eef2ff 0%, #f0fdfa 32%, #f8fafc 68%, #ede9fe 100%);
 }
 
 .auth-blob {
@@ -181,7 +181,7 @@ function onSsoLogin () {
 .auth-blob--a {
   width: min(420px, 90vw);
   height: min(420px, 90vw);
-  background: rgba(45, 212, 191, 0.28);
+  background: rgba(99, 102, 241, 0.2);
   top: -120px;
   right: -100px;
 }
@@ -189,7 +189,7 @@ function onSsoLogin () {
 .auth-blob--b {
   width: min(360px, 85vw);
   height: min(360px, 85vw);
-  background: rgba(14, 165, 233, 0.22);
+  background: rgba(6, 182, 212, 0.18);
   bottom: -140px;
   left: -90px;
 }
@@ -213,8 +213,8 @@ function onSsoLogin () {
   width: 72px;
   height: 72px;
   border-radius: 18px;
-  background: linear-gradient(145deg, var(--q-primary), #0d9488);
-  box-shadow: 0 14px 32px rgba(13, 148, 136, 0.35);
+  background: var(--ai-gradient);
+  box-shadow: 0 14px 32px rgba(99, 102, 241, 0.35);
 }
 
 .auth-sub {

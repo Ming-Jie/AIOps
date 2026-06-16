@@ -200,6 +200,7 @@
                   >
                     <span class="text-caption text-text3 chat-date-divider">{{ messageDateDividerAt(displayMessages, idx) }}</span>
                   </div>
+                  <!-- Normal message -->
                   <div
                     class="chat-message-row row no-wrap q-mb-md"
                     :class="m.role === 'user' ? 'justify-end' : 'justify-start'"
@@ -277,8 +278,14 @@
                               :title="t('chatPlanExecuteTaskList')"
                             />
                             <MdRenderer
-                              v-if="(m.displayedContent || m.content || '').trim() && !shouldHideAssistantMessageText(idx)"
-                              :content="m.displayedContent || m.content"
+                              v-if="m.role === 'assistant' && assistantBubbleText(m) && !shouldHideAssistantMessageText(idx)"
+                              :content="assistantBubbleText(m)"
+                            />
+                            <ChatAttachmentBar
+                              v-if="m.role === 'assistant'"
+                              :files="assistantMessageFiles(m)"
+                              :images="assistantMessageImages(m)"
+                              @preview-image="openImagePreview"
                             />
                           </template>
                         </div>
@@ -691,12 +698,19 @@
                                 <span class="text-body2 ellipsis">{{ getFileName(url) }}</span>
                               </div>
                             </div>
-                            <div v-if="m.content || (m.reactSteps && m.reactSteps.length > 0)" class="chat-bubble-body text-body2">
+                            <div v-if="m.role === 'user' || assistantBubbleText(m) || assistantHasAttachments(m) || (m.reactSteps && m.reactSteps.length > 0)" class="chat-bubble-body text-body2">
                               <template v-if="m.role === 'user'">{{ m.content }}</template>
-                              <MdRenderer
-                                v-else-if="m.content"
-                                :content="m.content"
-                              />
+                              <template v-else>
+                                <MdRenderer
+                                  v-if="assistantBubbleText(m)"
+                                  :content="assistantBubbleText(m)"
+                                />
+                                <ChatAttachmentBar
+                                  :files="assistantMessageFiles(m)"
+                                  :images="assistantMessageImages(m)"
+                                  @preview-image="openImagePreview"
+                                />
+                              </template>
                             </div>
                           </div>
                         </div>
@@ -719,11 +733,52 @@ import { useChatPage } from './useChatPage'
 import ThoughtSidebar from 'components/ThoughtSidebar.vue'
 import PlanExecutePanel from 'components/PlanExecutePanel.vue'
 import MdRenderer from 'components/MdRenderer.vue'
+import ChatAttachmentBar from 'components/ChatAttachmentBar.vue'
+import type { ChatReactStep } from 'src/api/types'
+import {
+  collectAssistantFileAttachments,
+  collectAssistantImagesFromReactSteps,
+  resolveWebAssistantBubbleText,
+  WEB_CONTENT_OMITTED_FALLBACK
+} from 'src/utils/chatAttachments'
 const $q = useQuasar()
 
 defineOptions({
   name: 'ChatPage'
 })
+
+function assistantBubbleText (m: { role?: string; content?: string; displayedContent?: string; reactSteps?: ChatReactStep[] }): string {
+  if (m.role !== 'assistant') return ''
+  const resolved = resolveWebAssistantBubbleText({
+    content: m.displayedContent || m.content || '',
+    reactSteps: m.reactSteps
+  })
+  if (resolved) return resolved
+  const files = assistantMessageFiles(m)
+  if (files.length > 0) {
+    const names = files.map((f) => f.filename).filter(Boolean).join('、')
+    return t('chatGeneratedFileHint', { names: names || '文件' })
+  }
+  if (assistantMessageImages(m).length > 0) {
+    return t('chatGeneratedImageHint')
+  }
+  if ((m.displayedContent || m.content || '').trim() === WEB_CONTENT_OMITTED_FALLBACK) {
+    return WEB_CONTENT_OMITTED_FALLBACK
+  }
+  return ''
+}
+
+function assistantMessageFiles (m: { reactSteps?: ChatReactStep[] }) {
+  return collectAssistantFileAttachments(m.reactSteps)
+}
+
+function assistantMessageImages (m: { reactSteps?: ChatReactStep[] }) {
+  return collectAssistantImagesFromReactSteps(m.reactSteps)
+}
+
+function assistantHasAttachments (m: { reactSteps?: ChatReactStep[] }): boolean {
+  return assistantMessageFiles(m).length > 0 || assistantMessageImages(m).length > 0
+}
 
 function chatPageStyleFn (offset: number, height: number): Record<string, string> {
   const h = height - offset
@@ -819,6 +874,7 @@ const {
   openImagePreview,
   openFilePreview
 } = useChatPage()
+
 </script>
 
 <style scoped>
@@ -869,11 +925,30 @@ const {
 }
 .body--dark .chat-session-browser-left {
   border-right-color: rgba(255, 255, 255, 0.12);
+
 }
+
 @media (max-width: 599px) {
   .chat-session-browser-left {
     min-height: 200px;
     max-height: 50vh;
   }
+}
+
+.chat-bubble-tool-image {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.08);
+  display: block;
+}
+
+.chat-media-standalone-image {
+  max-width: 100%;
+  max-height: 600px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.08);
+  display: block;
+  cursor: pointer;
 }
 </style>

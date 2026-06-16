@@ -30,20 +30,24 @@ func (s *PostgresStorage) CreateChatSession(ctx context.Context, agentID int64, 
 		uid = userID
 	}
 	var created, updated time.Time
+	var resetPolicy string
+	var idleTimeout int
 	err = s.pool.QueryRow(ctx,
-		`INSERT INTO chat_sessions (id, agent_id, user_id) VALUES ($1, $2, $3) RETURNING created_at, updated_at`,
+		`INSERT INTO chat_sessions (id, agent_id, user_id) VALUES ($1, $2, $3) RETURNING created_at, updated_at, COALESCE(reset_policy, 'none'), COALESCE(idle_timeout_minutes, 30)`,
 		id, agentID, uid,
-	).Scan(&created, &updated)
+	).Scan(&created, &updated, &resetPolicy, &idleTimeout)
 	if err != nil {
 		return nil, err
 	}
 	return &schema.ChatSession{
-		SessionID: id,
-		AgentID:   agentID,
-		UserID:    userID,
-		Title:     "",
-		CreatedAt: created,
-		UpdatedAt: updated,
+		SessionID:          id,
+		AgentID:            agentID,
+		UserID:             userID,
+		Title:              "",
+		CreatedAt:          created,
+		UpdatedAt:          updated,
+		ResetPolicy:        resetPolicy,
+		IdleTimeoutMinutes: idleTimeout,
 	}, nil
 }
 
@@ -59,7 +63,8 @@ func (s *PostgresStorage) ListChatSessionsByUserPrefix(ctx context.Context, agen
 		return []schema.ChatSession{}, nil
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions
+		`SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at,
+			COALESCE(reset_policy, 'none'), COALESCE(idle_timeout_minutes, 30) FROM chat_sessions
 		 WHERE agent_id = $1 AND user_id LIKE $2 ESCAPE '\' ORDER BY updated_at DESC LIMIT $3 OFFSET $4`,
 		agentID, escapeLikePrefix(userIDPrefix)+"%", limit, offset)
 	if err != nil {
@@ -70,7 +75,7 @@ func (s *PostgresStorage) ListChatSessionsByUserPrefix(ctx context.Context, agen
 	var list []schema.ChatSession
 	for rows.Next() {
 		var sess schema.ChatSession
-		if err := rows.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
+		if err := rows.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt, &sess.ResetPolicy, &sess.IdleTimeoutMinutes); err != nil {
 			return nil, err
 		}
 		list = append(list, sess)
@@ -94,12 +99,14 @@ func (s *PostgresStorage) ListChatSessions(ctx context.Context, agentID int64, u
 	}
 	var q string
 	var args []any
+	cols := `id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at,
+		COALESCE(reset_policy, 'none'), COALESCE(idle_timeout_minutes, 30)`
 	if userID == "" {
-		q = `SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions
+		q = `SELECT ` + cols + ` FROM chat_sessions
 			WHERE agent_id = $1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3`
 		args = []any{agentID, limit, offset}
 	} else {
-		q = `SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions
+		q = `SELECT ` + cols + ` FROM chat_sessions
 			WHERE agent_id = $1 AND user_id = $2 ORDER BY updated_at DESC LIMIT $3 OFFSET $4`
 		args = []any{agentID, userID, limit, offset}
 	}
@@ -112,7 +119,7 @@ func (s *PostgresStorage) ListChatSessions(ctx context.Context, agentID int64, u
 	var list []schema.ChatSession
 	for rows.Next() {
 		var sess schema.ChatSession
-		if err := rows.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
+		if err := rows.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt, &sess.ResetPolicy, &sess.IdleTimeoutMinutes); err != nil {
 			return nil, err
 		}
 		list = append(list, sess)
@@ -122,11 +129,12 @@ func (s *PostgresStorage) ListChatSessions(ctx context.Context, agentID int64, u
 
 func (s *PostgresStorage) GetChatSession(ctx context.Context, sessionID string) (*schema.ChatSession, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at FROM chat_sessions WHERE id = $1`,
+		`SELECT id, agent_id, COALESCE(user_id, ''), COALESCE(title, ''), created_at, updated_at,
+			COALESCE(reset_policy, 'none'), COALESCE(idle_timeout_minutes, 30) FROM chat_sessions WHERE id = $1`,
 		sessionID,
 	)
 	var sess schema.ChatSession
-	err := row.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt)
+	err := row.Scan(&sess.SessionID, &sess.AgentID, &sess.UserID, &sess.Title, &sess.CreatedAt, &sess.UpdatedAt, &sess.ResetPolicy, &sess.IdleTimeoutMinutes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSessionNotFound
@@ -378,25 +386,35 @@ func (s *PostgresStorage) CreateMessage(ctx context.Context, msg *model.AgentMes
 }
 
 func (s *PostgresStorage) ListMessages(ctx context.Context, req *schema.ListMessagesRequest) ([]*model.AgentMessage, int64, error) {
-	where := "1=1"
+	var (
+		conds   []string
+		args    []any
+		argIdx  int
+	)
+	conds = append(conds, "1=1")
+
 	if req.ChannelID > 0 {
-		where += fmt.Sprintf(" AND channel_id = %d", req.ChannelID)
+		argIdx++
+		conds = append(conds, fmt.Sprintf(" AND channel_id = $%d", argIdx))
+		args = append(args, req.ChannelID)
 	}
 	if req.AgentID > 0 {
-		where += fmt.Sprintf(" AND (from_agent_id = %d OR to_agent_id = %d)", req.AgentID, req.AgentID)
+		argIdx++
+		conds = append(conds, fmt.Sprintf(" AND (from_agent_id = $%d OR to_agent_id = $%d)", argIdx, argIdx))
+		args = append(args, req.AgentID)
 	}
 	if req.SessionID != "" {
-		where += fmt.Sprintf(" AND session_id = '%s'", req.SessionID)
+		argIdx++
+		conds = append(conds, fmt.Sprintf(" AND session_id = $%d", argIdx))
+		args = append(args, req.SessionID)
 	}
 	if req.Status != "" {
-		where += fmt.Sprintf(" AND status = '%s'", req.Status)
+		argIdx++
+		conds = append(conds, fmt.Sprintf(" AND status = $%d", argIdx))
+		args = append(args, req.Status)
 	}
 
-	var total int64
-	err := s.pool.QueryRow(ctx, "SELECT COUNT(*) FROM agent_messages WHERE "+where).Scan(&total)
-	if err != nil {
-		return nil, 0, err
-	}
+	where := strings.Join(conds, "")
 
 	offset := req.Offset
 	if offset < 0 {
@@ -407,9 +425,21 @@ func (s *PostgresStorage) ListMessages(ctx context.Context, req *schema.ListMess
 		limit = 50
 	}
 
+	var total int64
+	countSQL := "SELECT COUNT(*) FROM agent_messages WHERE " + where
+	if err := s.pool.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	argIdx++
+	args = append(args, limit)
+	argIdx++
+	args = append(args, offset)
+
 	rows, err := s.pool.Query(ctx,
 		fmt.Sprintf(`SELECT id, from_agent_id, to_agent_id, channel_id, session_id, kind, content, metadata, status, priority, created_at, delivered_at
-			FROM agent_messages WHERE %s ORDER BY created_at DESC LIMIT %d OFFSET %d`, where, limit, offset),
+			FROM agent_messages WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, argIdx-1, argIdx),
+		args...,
 	)
 	if err != nil {
 		return nil, 0, err
@@ -594,6 +624,20 @@ func (s *PostgresStorage) GetA2ACard(ctx context.Context, id int64) (*model.A2AC
 	err := s.pool.QueryRow(ctx,
 		`SELECT id, agent_id, name, description, url, version, capabilities, is_active, created_at FROM a2a_cards WHERE id = $1`,
 		id,
+	).Scan(&card.ID, &card.AgentID, &card.Name, &card.Description, &card.URL, &card.Version, &card.Capabilities, &card.IsActive, &card.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &card, nil
+}
+
+func (s *PostgresStorage) UpdateA2ACard(ctx context.Context, id int64, req *schema.UpdateA2ACardRequest) (*model.A2ACard, error) {
+	var card model.A2ACard
+	err := s.pool.QueryRow(ctx,
+		`UPDATE a2a_cards SET name=$1, description=$2, url=$3, version=$4, capabilities=$5, is_active=$6
+		 WHERE id=$7
+		 RETURNING id, agent_id, name, description, url, version, capabilities, is_active, created_at`,
+		req.Name, req.Description, req.URL, req.Version, req.Capabilities, req.IsActive, id,
 	).Scan(&card.ID, &card.AgentID, &card.Name, &card.Description, &card.URL, &card.Version, &card.Capabilities, &card.IsActive, &card.CreatedAt)
 	if err != nil {
 		return nil, err

@@ -34,7 +34,7 @@
           <q-btn color="primary" :label="t('wfCreateBtn')" icon="add" unelevated rounded @click="openEditor()" />
         </div>
 
-        <q-table flat bordered :rows="workflowList" :columns="listColumns" row-key="id" :loading="loading" :no-data-label="t('noData')">
+        <q-table flat bordered class="q-table--soft radius-md" :rows="workflowList" :columns="listColumns" row-key="id" :loading="loading" :no-data-label="t('noData')">
           <template #body-cell-kind="props">
             <q-td :props="props">
               <q-badge :color="props.row.kind === 'graph' ? 'purple' : 'blue'" :label="props.row.kind" />

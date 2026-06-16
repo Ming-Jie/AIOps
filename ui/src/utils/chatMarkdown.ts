@@ -1,16 +1,21 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import { stripWebToolEchoes } from 'src/utils/chatAttachments'
 
 marked.setOptions({
   gfm: true,
   breaks: true
 })
 
-/** Render assistant Markdown to sanitized HTML for v-html (DOMPurify strips scripts/on*). */
+const DATA_IMAGE_RE = /data:image\/[a-z+]+;base64,[A-Za-z0-9+/=]+/g
+
+/** Render assistant Markdown to sanitized HTML for v-html (web only). */
 export function renderChatMarkdown (text: string): string {
   const t = text?.trim()
   if (!t) return ''
-  const html = marked.parse(t, { async: false }) as string
+  // data:image shown via reactSteps; strip duplicate URIs from markdown text only.
+  const cleaned = stripWebToolEchoes(t).replace(DATA_IMAGE_RE, '')
+  const html = marked.parse(cleaned, { async: false }) as string
   return DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true }
   })

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/fisk086/aiops/internal/agent"
+	"github.com/fisk086/aiops/internal/skills"
 )
 
 func TestParseSSEAssistantPayload_ReActSkipsInternalContent(t *testing.T) {
@@ -153,6 +154,33 @@ func TestFinalizeAssistantForPersistence_brokenRead(t *testing.T) {
 	raw := []byte(`data: {"content":"partial"}` + "\n\n")
 	got, up := finalizeAssistantForPersistence(raw, "partial", errors.New("reset"))
 	if !strings.Contains(got, "未完整结束") || up {
+		t.Fatalf("got %q updateProfile=%v", got, up)
+	}
+}
+
+func TestParseSSEAssistantPayload_PrefersFinalWhenAccSanitizesEmpty(t *testing.T) {
+	raw := strings.Join([]string{
+		`data: {"content":"Random file generated: x.txt"}`,
+		`data: {"content":"N0nkNTMizdnDO4Xl5//9/vEe4by3AcDM3wFSaJljWmZM+L27PWoTFDRTIgikqtHetA15GW5qBjroI32rjhbfiQa6EtUt2ByfsRxRzFuatJG/0jmId7FFyYMt91mt13gw7HQCtA=="}`,
+		`data: {"type":"final_answer","content":"已生成 chuntian.txt，请点击下载。"}`,
+		`data: [DONE]`,
+	}, "\n\n")
+	got := parseSSEAssistantPayload([]byte(raw))
+	want := "已生成 chuntian.txt，请点击下载。"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestFinalizeAssistantForPersistence_emptyWithAttachmentsUsesFallback(t *testing.T) {
+	raw := strings.Join([]string{
+		`data: {"type":"observation","content":"7821,3492","tool":"builtin_web_save_file","attachments":[{"filename":"data.txt","url":"/api/v1/chat/files/x"}]}`,
+		`data: {"type":"final_answer","content":"7821, 3492, 1056"}`,
+		`data: [DONE]`,
+	}, "\n\n")
+	parsed := parseSSEAssistantPayload([]byte(raw))
+	got, up := finalizeAssistantForPersistence([]byte(raw), parsed, io.EOF)
+	if got != skills.WebContentOmittedFallback || !up {
 		t.Fatalf("got %q updateProfile=%v", got, up)
 	}
 }

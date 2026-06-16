@@ -76,6 +76,12 @@ export function useSkillsPage () {
       classes: 'skill-table-col-risk'
     },
     { name: 'execution_mode', label: t('executionLocation'), field: 'execution_mode', align: 'center' as const },
+    {
+      name: 'created_by',
+      label: t('creator'),
+      field: (row: Skill) => (row.created_by === 0 ? t('system') : String(row.created_by)),
+      align: 'center' as const
+    },
     { name: 'description', label: t('description'), field: 'description', align: 'left' as const },
     {
       name: 'is_active',

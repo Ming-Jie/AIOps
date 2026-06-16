@@ -1,7 +1,49 @@
-body
-  font-family: "PingFang SC", "Helvetica Neue", Helvetica, Arial, "Hiragino Sans GB", "Heiti SC", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif
+// ═══════════════════════════════════════════
+// Design System - AI 风格全局设计变量与工具类
+// ═══════════════════════════════════════════
 
-// 仅禁止横向溢出；纵向交给视口滚动，否则长页（如仪表盘）在 html overflow:hidden 下无法滚动
+\:root
+  // 主色：深邃紫 → 青蓝渐变（AI 产品常用）
+  --ai-primary: #6366f1
+  --ai-primary-light: #818cf8
+  --ai-primary-dark: #4f46e5
+  --ai-accent: #06b6d4
+  --ai-accent-light: #22d3ee
+  --ai-gradient: linear-gradient(145deg, #6366f1, #06b6d4)
+  --ai-gradient-warm: linear-gradient(145deg, #6366f1, #a855f7)
+  --ai-glow: 0 0 20px rgba(99, 102, 241, 0.25)
+
+  // 页面色
+  --color-bg-page: #f1f5f9
+  --color-bg-card: #ffffff
+  --color-bg-elevated: #ffffff
+  --color-text-primary: #0f172a
+  --color-text-secondary: #475569
+  --color-text-muted: #94a3b8
+  --color-border-light: rgba(0, 0, 0, 0.05)
+  --color-border-default: rgba(0, 0, 0, 0.08)
+
+  // 阴影（带微发光）
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 1px rgba(0, 0, 0, 0.02)
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.03)
+  --shadow-xl: 0 12px 40px rgba(0, 0, 0, 0.07), 0 4px 8px rgba(0, 0, 0, 0.03)
+  --shadow-glow: 0 4px 16px rgba(99, 102, 241, 0.15)
+
+  // 圆角
+  --radius-sm: 6px
+  --radius-md: 10px
+  --radius-lg: 14px
+  --radius-xl: 20px
+
+body
+  font-family: "PingFang SC", "Inter", "Helvetica Neue", Arial, sans-serif
+  background: var(--color-bg-page)
+  color: var(--color-text-primary)
+  -webkit-font-smoothing: antialiased
+  -moz-osx-font-smoothing: grayscale
+
+// 仅禁止横向溢出；纵向交给视口滚动
 html
   overflow-x: hidden
 
@@ -20,21 +62,30 @@ div::-webkit-scrollbar-thumb
 div::-webkit-scrollbar-thumb:hover
   background: #33333333
 
+// 文字颜色工具类
 .text-text2
-  color: #3F3F46 !important
+  color: var(--color-text-secondary) !important
 
 .text-text3
-  color: #70707B !important
+  color: var(--color-text-muted) !important
 
+// 圆角工具类
 .radius-xs
   border-radius: 4px
 
 .radius-sm
-  border-radius: 6px
+  border-radius: var(--radius-sm)
 
 .radius-md
-  border-radius: 8px
+  border-radius: var(--radius-md)
 
+.radius-lg
+  border-radius: var(--radius-lg)
+
+.radius-xl
+  border-radius: var(--radius-xl)
+
+// 字号工具类
 .f12
   font-size: 12px
 
@@ -53,15 +104,161 @@ div::-webkit-scrollbar-thumb:hover
 .q-btn .q-icon
   font-size: 20px !important
 
+// 阴影工具类
+.shadow-soft-sm
+  box-shadow: var(--shadow-sm) !important
+
+.shadow-soft-md
+  box-shadow: var(--shadow-md) !important
+
+.shadow-soft-lg
+  box-shadow: var(--shadow-lg) !important
+
+.shadow-soft-xl
+  box-shadow: var(--shadow-xl) !important
+
+.shadow-glow
+  box-shadow: var(--shadow-glow) !important
+
+// ─── AI 风格卡片 ───────────────────────────
+
+// 毛玻璃卡片（推荐用于弹窗、浮动面板）
+.card-glass
+  background: rgba(255, 255, 255, 0.75)
+  backdrop-filter: blur(20px) saturate(1.4)
+  -webkit-backdrop-filter: blur(20px) saturate(1.4)
+  border: 1px solid rgba(255, 255, 255, 0.6)
+  border-radius: var(--radius-xl)
+  box-shadow: var(--shadow-lg)
+  transition: box-shadow 0.25s ease, transform 0.25s ease
+
+.card-glass:hover
+  box-shadow: var(--shadow-xl)
+
+// 标准柔和卡片
+.card-soft
+  background: var(--color-bg-card)
+  border-radius: var(--radius-lg)
+  box-shadow: var(--shadow-sm)
+  border: 1px solid var(--color-border-light)
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s
+
+.card-soft:hover
+  box-shadow: var(--shadow-md)
+  border-color: rgba(0, 0, 0, 0.08)
+
+.card-soft--hover-lift:hover
+  transform: translateY(-2px)
+  box-shadow: var(--shadow-lg)
+
+.card-soft--bordered
+  border: 1px solid var(--color-border-default)
+
+// 渐变装饰顶边卡片
+.card-accent-top
+  position: relative
+  overflow: hidden
+  &::before
+    content: ''
+    position: absolute
+    top: 0
+    left: 0
+    right: 0
+    height: 3px
+    background: var(--ai-gradient)
+
+// ─── AI 按钮风格 ───────────────────────────
+
+// 主要按钮：渐变背景 + 发光
+.btn-ai-primary
+  background: var(--ai-gradient) !important
+  color: #fff !important
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25) !important
+  transition: box-shadow 0.2s ease, transform 0.15s ease !important
+  &:hover
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35) !important
+    transform: translateY(-1px)
+
+// ─── 页面过渡动效 ─────────────────────────
+
+.page-fade-enter-active,
+.page-fade-leave-active
+  transition: opacity 0.2s ease, transform 0.2s ease
+
+.page-fade-enter-from
+  opacity: 0
+  transform: translateY(6px)
+
+.page-fade-leave-to
+  opacity: 0
+  transform: translateY(-4px)
+
+// ─── 抽屉导航激活项 ───────────────────────
+
+.drawer-item-active
+  position: relative
+  background: rgba(99, 102, 241, 0.08) !important
+  color: var(--ai-primary) !important
+  &::before
+    content: ''
+    position: absolute
+    left: 0
+    top: 6px
+    bottom: 6px
+    width: 3px
+    border-radius: 0 2px 2px 0
+    background: var(--ai-gradient)
+
+// ─── 表格样式优化 ─────────────────────────
+
+.q-table--soft
+  thead tr th
+    font-weight: 600
+    font-size: 12px
+    text-transform: uppercase
+    letter-spacing: 0.04em
+    color: var(--color-text-muted)
+    background: rgba(0, 0, 0, 0.02)
+    padding: 10px 16px
+  tbody tr
+    transition: background-color 0.15s ease
+    &:hover
+      background: rgba(99, 102, 241, 0.03)
+  tbody tr td
+    padding: 12px 16px
+
+// ─── 品牌色彩工具 ─────────────────────────
+
+.text-ai-primary
+  color: var(--ai-primary) !important
+
+.text-ai-accent
+  color: var(--ai-accent) !important
+
+.bg-ai-gradient
+  background: var(--ai-gradient) !important
+
+.border-ai
+  border-color: var(--ai-primary) !important
+
+// q-card 圆角覆盖
+.q-card--default
+  border-radius: var(--radius-lg)
+
 .login-page,
 .register-page,
 .auth-shell
   .login-btn
     color: #ffffff
-    background: var(--q-primary)
+    background: var(--ai-gradient)
     padding: 11px 48px
     font-size: 16px
-    border-radius: 8px
+    border-radius: 10px
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3)
+    transition: box-shadow 0.2s ease, transform 0.15s ease
+    &:hover
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4)
+      transform: translateY(-1px)
     span
       font-weight: 500
 
@@ -97,7 +294,7 @@ div::-webkit-scrollbar-thumb:hover
   min-height: 0
   overflow: hidden
   box-sizing: border-box
-  background: #fafafa
+  background: #f7f7f4
 
 .chat-main-body
   flex: 1 1 0
@@ -247,7 +444,7 @@ div::-webkit-scrollbar-thumb:hover
 .chat-toolbar
   flex-shrink: 0
   border-bottom: 1px solid rgba(0, 0, 0, 0.06)
-  background: #fff
+  background: #ffffff
   gap: 8px
 
 .chat-toolbar-select
@@ -258,12 +455,12 @@ div::-webkit-scrollbar-thumb:hover
   min-height: 0
   overflow-x: hidden
   overflow-y: auto
-  background: #f5f5f7
+  background: #f3f3ee
 
 .chat-pending-strip
   width: 100%
   box-sizing: border-box
-  background: #eef2f6
+  background: #eeefe8
   border-top: 1px solid rgba(0, 0, 0, 0.08)
   border-bottom: 1px solid rgba(0, 0, 0, 0.06)
 
@@ -280,8 +477,8 @@ div::-webkit-scrollbar-thumb:hover
   width: 80px
   height: 80px
   border-radius: 24px
-  background: #fff
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08)
+  background: var(--ai-gradient)
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2)
 
 .chat-welcome-sub
   max-width: 420px
@@ -293,9 +490,10 @@ div::-webkit-scrollbar-thumb:hover
 
 .chat-quick-card
   border-radius: 12px !important
-  transition: box-shadow 0.2s ease
+  transition: box-shadow 0.2s ease, border-color 0.2s ease
   &:hover
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08)
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.1)
+    border-color: rgba(99, 102, 241, 0.2) !important
 
 .chat-messages
   width: 100%
@@ -346,8 +544,8 @@ div::-webkit-scrollbar-thumb:hover
 .chat-bubble-user
   margin-left: auto
   margin-right: 0
-  background: #e3f2fd
-  border: 1px solid rgba(25, 118, 210, 0.15)
+  background: linear-gradient(135deg, #eef2ff, #e0f2fe)
+  border: 1px solid rgba(99, 102, 241, 0.15)
 
 .chat-bubble-assistant
   margin-left: 0
@@ -355,6 +553,7 @@ div::-webkit-scrollbar-thumb:hover
   background: #fff
   border: 1px solid rgba(0, 0, 0, 0.06)
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04)
+  min-height: 1.5em
 
 .body--dark .chat-bubble-assistant
   background: rgba(255, 255, 255, 0.06)
@@ -377,8 +576,9 @@ div::-webkit-scrollbar-thumb:hover
   width: 6px
   height: 6px
   border-radius: 50%
-  background: rgba(25, 118, 210, 0.55)
+  background: var(--ai-primary)
   animation: chat-typing-bounce 1.2s ease-in-out infinite
+  opacity: 0.55
   &:nth-child(2)
     animation-delay: 0.15s
   &:nth-child(3)
@@ -675,6 +875,22 @@ div::-webkit-scrollbar-thumb:hover
 .main-layout-page-container
   flex: 1 1 auto
   min-height: 0
+  position: relative
+
+  // AI 科技感微网格背景
+  &::before
+    content: ''
+    position: fixed
+    inset: 0
+    pointer-events: none
+    z-index: 0
+    background-image: radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.04) 1px, transparent 0)
+    background-size: 24px 24px
+
+  > .q-page-container,
+  > div
+    position: relative
+    z-index: 1
 
 .q-page-container
   overflow-x: hidden !important

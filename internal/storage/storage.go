@@ -11,9 +11,12 @@ type Storage interface {
 	ListAgents() ([]*schema.Agent, error)
 	GetAgent(id int64) (*schema.AgentWithRuntime, error)
 	GetAgentIDByName(ctx context.Context, name string) (int64, error)
-	CreateAgent(agent *schema.CreateAgentRequest) (*schema.Agent, error)
+	GetAgentOwner(id int64) (int64, error)
+	CreateAgent(agent *schema.CreateAgentRequest, createdBy int64) (*schema.Agent, error)
 	UpdateAgent(id int64, req *schema.UpdateAgentRequest) (*schema.Agent, error)
 	DeleteAgent(id int64) error
+	SetAgentChatUsers(ctx context.Context, agentID int64, userIDs []int64) error
+	GetAgentChatUsers(ctx context.Context, agentID int64) ([]int64, error)
 
 	GetCapabilityTree(agentID int64) (*schema.CapabilityTree, error)
 	UpdateCapabilityTree(agentID int64, nodes []schema.CapabilityTreeNode) (*schema.CapabilityTree, error)
@@ -21,14 +24,14 @@ type Storage interface {
 	ListSkills() ([]*schema.Skill, error)
 	GetSkill(id int64) (*schema.Skill, error)
 	GetSkillByKey(key string) (*schema.Skill, error)
-	CreateSkill(skill *schema.CreateSkillRequest) (*schema.Skill, error)
-	UpsertSkill(skill *schema.CreateSkillRequest) (*schema.Skill, error)
+	CreateSkill(skill *schema.CreateSkillRequest, createdBy int64) (*schema.Skill, error)
+	UpsertSkill(skill *schema.CreateSkillRequest, createdBy int64) (*schema.Skill, error)
 	UpdateSkill(id int64, req *schema.UpdateSkillRequest) (*schema.Skill, error)
 	DeleteSkill(id int64) error
 
 	ListMCPConfigs() ([]*schema.MCPConfig, error)
 	GetMCPConfig(id int64) (*schema.MCPConfig, error)
-	CreateMCPConfig(cfg *schema.CreateMCPConfigRequest) (*schema.MCPConfig, error)
+	CreateMCPConfig(cfg *schema.CreateMCPConfigRequest, createdBy int64) (*schema.MCPConfig, error)
 	UpdateMCPConfig(id int64, cfg *schema.CreateMCPConfigRequest) (*schema.MCPConfig, error)
 	DeleteMCPConfig(id int64) error
 
@@ -101,6 +104,7 @@ type Storage interface {
 	CreateA2ACard(ctx context.Context, req *schema.CreateA2ACardRequest) (*model.A2ACard, error)
 	ListA2ACards(ctx context.Context, agentID int64) ([]*model.A2ACard, error)
 	GetA2ACard(ctx context.Context, id int64) (*model.A2ACard, error)
+	UpdateA2ACard(ctx context.Context, id int64, req *schema.UpdateA2ACardRequest) (*model.A2ACard, error)
 	DeleteA2ACard(ctx context.Context, id int64) error
 
 	GetWorkflowDefinition(ctx context.Context, id int64) (*model.WorkflowDefinition, error)

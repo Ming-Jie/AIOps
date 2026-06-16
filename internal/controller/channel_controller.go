@@ -5,28 +5,43 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/fisk086/aiops/internal/auth"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/storage"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 )
 
 type ChannelController struct {
-	svc *service.ChannelService
+	svc       *service.ChannelService
+	jwtCfg    auth.JWTConfig
+	userStore storage.UserStore
 }
 
-func NewChannelController(svc *service.ChannelService) *ChannelController {
-	return &ChannelController{svc: svc}
+func NewChannelController(svc *service.ChannelService, jwtCfg auth.JWTConfig, userStore storage.UserStore) *ChannelController {
+	return &ChannelController{svc: svc, jwtCfg: jwtCfg, userStore: userStore}
 }
 
 func (c *ChannelController) RegisterRoutes(r *server.Hertz) {
 	g := r.Group("/api/v1/channels")
+	if c.userStore != nil {
+		g.Use(auth.JWTMiddleware(c.jwtCfg, c.getUserForMiddleware))
+	}
 	g.GET("", c.List)
 	g.POST("", c.Create)
 	g.GET("/:id", c.Get)
 	g.PUT("/:id", c.Update)
 	g.DELETE("/:id", c.Delete)
 	g.POST("/:id/test", c.Test)
+}
+
+func (c *ChannelController) getUserForMiddleware(userID int64) (*auth.User, error) {
+	user, err := c.userStore.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.User{ID: user.ID, Username: user.Username, Email: user.Email, Status: string(user.Status), IsAdmin: user.IsAdmin}, nil
 }
 
 func (c *ChannelController) List(ctx context.Context, hc *app.RequestContext) {

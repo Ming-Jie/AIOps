@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fisk086/aiops/internal/logger"
 	"github.com/fisk086/aiops/internal/model"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/jackc/pgx/v5"
@@ -14,8 +15,9 @@ import (
 
 func (s *PostgresStorage) ListAgents() ([]*schema.Agent, error) {
 	rows, err := s.pool.Query(context.Background(),
-		`SELECT a.id, a.public_id::text, a.name, a.description, a.category, a.is_builtin, a.is_active, a.created_at, a.updated_at,
-			COALESCE(r.skill_ids, '{}'), COALESCE(r.mcp_config_ids, '{}'), COALESCE(r.kb_ids, '{}')
+		`SELECT a.id, a.public_id::text, a.name, a.description, a.category, a.is_builtin, a.is_active, COALESCE(a.created_by, 0), a.created_at, a.updated_at,
+			COALESCE(r.skill_ids, '{}'), COALESCE(r.mcp_config_ids, '{}'), COALESCE(r.kb_ids, '{}'),
+			COALESCE((SELECT array_agg(acu.user_id) FROM agent_chat_users acu WHERE acu.agent_id = a.id), '{}')
 		FROM agents a
 		LEFT JOIN agent_runtime r ON a.id = r.agent_id
 		ORDER BY a.id`)
@@ -30,12 +32,16 @@ func (s *PostgresStorage) ListAgents() ([]*schema.Agent, error) {
 		var skillIDs []string
 		var mcpIDs []int64
 		var kbIDs []int64
-		if err := rows.Scan(&a.ID, &a.PublicID, &a.Name, &a.Desc, &a.Category, &a.IsBuiltin, &a.IsActive, &a.CreatedAt, &a.UpdatedAt, &skillIDs, &mcpIDs, &kbIDs); err != nil {
+		var chatUserIDs []int64
+		if err := rows.Scan(&a.ID, &a.PublicID, &a.Name, &a.Desc, &a.Category, &a.IsBuiltin, &a.IsActive, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt, &skillIDs, &mcpIDs, &kbIDs, &chatUserIDs); err != nil {
 			return nil, err
 		}
 		a.SkillIDs = skillIDs
 		a.MCPConfigIDs = mcpIDs
 		a.KBIDs = kbIDs
+		if len(chatUserIDs) > 0 {
+			a.ChatUserIDs = chatUserIDs
+		}
 		agents = append(agents, &a)
 	}
 	return agents, nil
@@ -44,8 +50,10 @@ func (s *PostgresStorage) ListAgents() ([]*schema.Agent, error) {
 func (s *PostgresStorage) GetAgent(id int64) (*schema.AgentWithRuntime, error) {
 	var a schema.Agent
 	err := s.pool.QueryRow(context.Background(),
-		`SELECT id, public_id::text, name, description, category, is_builtin, is_active, created_at, updated_at FROM agents WHERE id = $1`, id).
-		Scan(&a.ID, &a.PublicID, &a.Name, &a.Desc, &a.Category, &a.IsBuiltin, &a.IsActive, &a.CreatedAt, &a.UpdatedAt)
+		`SELECT a.id, a.public_id::text, a.name, a.description, a.category, a.is_builtin, a.is_active, COALESCE(a.created_by, 0), a.created_at, a.updated_at,
+			COALESCE((SELECT array_agg(acu.user_id) FROM agent_chat_users acu WHERE acu.agent_id = a.id), '{}')
+		FROM agents a WHERE a.id = $1`, id).
+		Scan(&a.ID, &a.PublicID, &a.Name, &a.Desc, &a.Category, &a.IsBuiltin, &a.IsActive, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt, &a.ChatUserIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -91,12 +99,12 @@ func (s *PostgresStorage) GetAgent(id int64) (*schema.AgentWithRuntime, error) {
 			IMConfig:        imConfig,
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		_ = fmt.Errorf("failed to load agent_runtime row (agent returned without runtime profile): %w", err)
+		logger.Warn("failed to load agent_runtime row (agent returned without runtime profile)", "err", err)
 	}
 
 	tree, err := s.GetCapabilityTree(id)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		_ = fmt.Errorf("failed to get capability tree: %w", err)
+		logger.Warn("failed to get capability tree", "err", err)
 	}
 	if tree != nil {
 		agent.CapabilityTree = tree
@@ -114,13 +122,13 @@ func (s *PostgresStorage) GetAgentIDByName(ctx context.Context, name string) (in
 	return id, nil
 }
 
-func (s *PostgresStorage) CreateAgent(req *schema.CreateAgentRequest) (*schema.Agent, error) {
+func (s *PostgresStorage) CreateAgent(req *schema.CreateAgentRequest, createdBy int64) (*schema.Agent, error) {
 	var id int64
 	var publicID string
 	var now time.Time
 	err := s.pool.QueryRow(context.Background(),
-		`INSERT INTO agents (name, description, category, is_builtin, is_active) VALUES ($1, $2, $3, false, true) RETURNING id, public_id::text, created_at`,
-		req.Name, req.Description, req.Category).Scan(&id, &publicID, &now)
+		`INSERT INTO agents (name, description, category, created_by) VALUES ($1, $2, $3, $4) RETURNING id, public_id::text, created_at`,
+		req.Name, req.Description, req.Category, createdBy).Scan(&id, &publicID, &now)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +148,7 @@ func (s *PostgresStorage) CreateAgent(req *schema.CreateAgentRequest) (*schema.A
 	}
 
 	return &schema.Agent{
-		ID: id, PublicID: publicID, Name: req.Name, Desc: req.Description, Category: req.Category, CreatedAt: now, UpdatedAt: now,
+		ID: id, PublicID: publicID, Name: req.Name, Desc: req.Description, Category: req.Category, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
 	}, nil
 }
 
@@ -160,9 +168,10 @@ func (s *PostgresStorage) UpdateAgent(id int64, req *schema.UpdateAgentRequest) 
 			maxIter = 16
 		}
 		var imConfigJSON []byte
-		// Persist full im_config whenever an IM platform is selected (matches UI: Telegram uses token/chat_id only).
 		if rp.IMEnabled != "" && rp.IMEnabled != "disabled" {
-			imConfigJSON, _ = json.Marshal(rp.IMConfig)
+			if data, err := json.Marshal(rp.IMConfig); err == nil && string(data) != "{}" {
+				imConfigJSON = data
+			}
 		}
 		_, err = s.pool.Exec(context.Background(),
 			`UPDATE agent_runtime SET source_agent = COALESCE(NULLIF($1, ''), source_agent), archetype = COALESCE(NULLIF($2, ''), archetype), role = COALESCE(NULLIF($3, ''), role), goal = COALESCE(NULLIF($4, ''), goal), backstory = COALESCE(NULLIF($5, ''), backstory), system_prompt = COALESCE(NULLIF($6, ''), system_prompt), llm_model = COALESCE(NULLIF($7, ''), llm_model), model_config_id = $22, temperature = $8, stream_enabled = $9, memory_enabled = $10, skill_ids = $11, mcp_config_ids = $12, execution_mode = COALESCE(NULLIF($13, ''), execution_mode), max_iterations = $14, plan_prompt = COALESCE(NULLIF($15, ''), plan_prompt), reflection_depth = $16, approval_mode = COALESCE(NULLIF($17, ''), approval_mode), approvers = $18, im_enabled = COALESCE(NULLIF($19, ''), im_enabled), im_config = $20, kb_ids = $23, updated_at = NOW() WHERE agent_id = $21`,
@@ -186,9 +195,58 @@ func (s *PostgresStorage) UpdateAgent(id int64, req *schema.UpdateAgentRequest) 
 	return &schema.Agent{ID: id, PublicID: publicID, Name: name, Desc: desc, Category: category, IsBuiltin: isBuiltin, IsActive: isActive, CreatedAt: createdAt, UpdatedAt: now}, nil
 }
 
+func (s *PostgresStorage) GetAgentOwner(id int64) (int64, error) {
+	var ownerID int64
+	err := s.pool.QueryRow(context.Background(), `SELECT COALESCE(created_by, 0) FROM agents WHERE id = $1`, id).Scan(&ownerID)
+	if err != nil {
+		return 0, err
+	}
+	return ownerID, nil
+}
+
 func (s *PostgresStorage) DeleteAgent(id int64) error {
 	_, err := s.pool.Exec(context.Background(), `DELETE FROM agents WHERE id = $1`, id)
 	return err
+}
+
+func (s *PostgresStorage) SetAgentChatUsers(ctx context.Context, agentID int64, userIDs []int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `DELETE FROM agent_chat_users WHERE agent_id = $1`, agentID)
+	if err != nil {
+		return err
+	}
+
+	for _, uid := range userIDs {
+		_, err = tx.Exec(ctx, `INSERT INTO agent_chat_users (agent_id, user_id, created_by) VALUES ($1, $2, $3)`, agentID, uid, uid)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (s *PostgresStorage) GetAgentChatUsers(ctx context.Context, agentID int64) ([]int64, error) {
+	rows, err := s.pool.Query(ctx, `SELECT user_id FROM agent_chat_users WHERE agent_id = $1`, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func (s *PostgresStorage) GetCapabilityTree(agentID int64) (*schema.CapabilityTree, error) {

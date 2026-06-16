@@ -15,6 +15,7 @@ import (
 
 	"github.com/fisk086/aiops/internal/imoutbound"
 	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/skills"
 )
 
 const maxDingtalkSendFileBytes = 20 << 20
@@ -134,6 +135,9 @@ func (c *Client) uploadAndSendFile(ctx context.Context, cfg *BotConfig, sessionW
 	ext := filepath.Ext(absPath)
 	mediaType := "file"
 	if isDingtalkImageExt(ext) {
+		if err := skills.ValidateIMImageFile(absPath); err != nil {
+			return fmt.Errorf("dingtalk image validate: %w", err)
+		}
 		mediaType = "image"
 	}
 	mediaID, err := c.uploadMedia(ctx, cfg, absPath, mediaType)
@@ -160,7 +164,7 @@ func (c *Client) sendOutboundFiles(ctx context.Context, cfg *BotConfig, sessionW
 	}
 	var failed []string
 	for _, name := range names {
-		abs, err := c.outbound.ResolveFile(scope, name)
+		abs, err := skills.ResolveIMAttachmentPath(c.outbound, scope, name)
 		if err != nil {
 			logger.Warn("dingtalkbot: outbound file resolve failed", "file", name, "err", err)
 			failed = append(failed, name)
@@ -174,8 +178,4 @@ func (c *Client) sendOutboundFiles(ctx context.Context, cfg *BotConfig, sessionW
 		}
 	}
 	return failed
-}
-
-func dingtalkFileSendSystemHint() string {
-	return `（系统提示）当前为钉钉 IM 对话。若用户需要可下载/保存的文件，请使用工具 builtin_im_save_file 写入文件，并在最终回复中**原样保留**工具返回的 [[lark_file:文件名]] 或 [[dingtalk_file:文件名]] 标记（可多个）。机器人会自动上传并以文件/图片消息发送。纯文本说明可与标记同条回复。`
 }

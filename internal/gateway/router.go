@@ -25,9 +25,8 @@ type MessageRouter struct {
 }
 
 type routeTask struct {
-	msg    *model.AgentMessage
-	ctx    context.Context
-	result chan error
+	msg *model.AgentMessage
+	ctx context.Context
 }
 
 type MessageStore interface {
@@ -42,6 +41,7 @@ type MessageStore interface {
 	CreateA2ACard(ctx context.Context, req *schema.CreateA2ACardRequest) (*model.A2ACard, error)
 	ListA2ACards(ctx context.Context, agentID int64) ([]*model.A2ACard, error)
 	GetA2ACard(ctx context.Context, id int64) (*model.A2ACard, error)
+	UpdateA2ACard(ctx context.Context, id int64, req *schema.UpdateA2ACardRequest) (*model.A2ACard, error)
 	DeleteA2ACard(ctx context.Context, id int64) error
 }
 
@@ -309,32 +309,54 @@ func (mr *MessageRouter) Subscribe(channelID int64) (<-chan *model.AgentMessage,
 	return ch, cancel
 }
 
-func (mr *MessageRouter) SendMessage(ctx context.Context, req *schema.SendMessageRequest) (*schema.MessageSendResponse, error) {
-	if req.ToAgentID == 0 && req.ChannelID == 0 {
-		return nil, fmt.Errorf("either to_agent_id or channel_id must be specified")
+func (mr *MessageRouter) resolveTargets(req *schema.SendMessageRequest) (targetAgentID, targetChannelID int64, err error) {
+	targetChannelID = req.ChannelID
+	targetAgentID = req.ToAgentID
+
+	if targetChannelID == 0 && targetAgentID == 0 {
+		return 0, 0, fmt.Errorf("either to_agent_id or channel_id must be specified")
 	}
 
-	targetAgentID := req.ToAgentID
-	targetChannelID := req.ChannelID
-
 	if targetChannelID == 0 {
-		channels, err := mr.store.ListMessageChannels(context.Background(), targetAgentID)
-		if err != nil || len(channels) == 0 {
-			return nil, fmt.Errorf("no channel found for agent %d", targetAgentID)
+		mr.mu.RLock()
+		for _, ch := range mr.channels {
+			if ch.AgentID == targetAgentID {
+				targetChannelID = ch.ID
+				break
+			}
 		}
-		targetChannelID = channels[0].ID
+		mr.mu.RUnlock()
+		if targetChannelID == 0 {
+			channels, err := mr.store.ListMessageChannels(context.Background(), targetAgentID)
+			if err != nil || len(channels) == 0 {
+				return 0, 0, fmt.Errorf("no channel found for agent %d", targetAgentID)
+			}
+			targetChannelID = channels[0].ID
+		}
 	}
 
 	if targetAgentID == 0 {
+		mr.mu.RLock()
 		if ch, ok := mr.channels[targetChannelID]; ok {
 			targetAgentID = ch.AgentID
-		} else {
+		}
+		mr.mu.RUnlock()
+		if targetAgentID == 0 {
 			dbCh, err := mr.store.GetMessageChannel(context.Background(), targetChannelID)
 			if err != nil {
-				return nil, fmt.Errorf("channel not found: %d", targetChannelID)
+				return 0, 0, fmt.Errorf("channel not found: %d", targetChannelID)
 			}
 			targetAgentID = dbCh.AgentID
 		}
+	}
+
+	return targetAgentID, targetChannelID, nil
+}
+
+func (mr *MessageRouter) SendMessage(ctx context.Context, req *schema.SendMessageRequest) (*schema.MessageSendResponse, error) {
+	targetAgentID, targetChannelID, err := mr.resolveTargets(req)
+	if err != nil {
+		return nil, err
 	}
 
 	msg := &model.AgentMessage{
@@ -355,31 +377,16 @@ func (mr *MessageRouter) SendMessage(ctx context.Context, req *schema.SendMessag
 		return nil, fmt.Errorf("failed to store message: %w", err)
 	}
 
-	task := &routeTask{
-		msg:    storedMsg,
-		ctx:    ctx,
-		result: make(chan error, 1),
-	}
-
 	select {
-	case mr.messageQueue <- task:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	case mr.messageQueue <- &routeTask{msg: storedMsg, ctx: context.Background()}:
+	default:
+		go mr.deliverMessage(context.Background(), storedMsg)
 	}
 
-	err = <-task.result
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	resp := &schema.MessageSendResponse{
-		MessageID:   storedMsg.ID,
-		Status:      "delivered",
-		DeliveredAt: now.Format(time.RFC3339),
-	}
-
-	return resp, nil
+	return &schema.MessageSendResponse{
+		MessageID: storedMsg.ID,
+		Status:    "pending",
+	}, nil
 }
 
 func (mr *MessageRouter) SendSpan(ctx context.Context, req *schema.MessageSpanRequest) (*schema.MessageSpanResponse, error) {
@@ -420,6 +427,22 @@ func (mr *MessageRouter) SendSpan(ctx context.Context, req *schema.MessageSpanRe
 	}, nil
 }
 
+func (mr *MessageRouter) agentName(id int64) string {
+	mr.mu.RLock()
+	name, ok := mr.agentsByID[id]
+	mr.mu.RUnlock()
+	if ok {
+		return name
+	}
+	if agent, ok := mr.agentRuntime.GetAgent(id); ok {
+		mr.mu.Lock()
+		mr.agentsByID[id] = agent.Name
+		mr.mu.Unlock()
+		return agent.Name
+	}
+	return ""
+}
+
 func (mr *MessageRouter) ListMessages(req *schema.ListMessagesRequest) ([]*schema.AgentMessage, int64, error) {
 	if req.Limit <= 0 {
 		req.Limit = 50
@@ -447,12 +470,8 @@ func (mr *MessageRouter) ListMessages(req *schema.ListMessagesRequest) ([]*schem
 			DeliveredAt: msg.DeliveredAt,
 		}
 
-		if name, ok := mr.agentsByID[msg.FromAgentID]; ok {
-			schemaMsg.FromAgentName = name
-		}
-		if name, ok := mr.agentsByID[msg.ToAgentID]; ok {
-			schemaMsg.ToAgentName = name
-		}
+		schemaMsg.FromAgentName = mr.agentName(msg.FromAgentID)
+		schemaMsg.ToAgentName = mr.agentName(msg.ToAgentID)
 
 		result = append(result, schemaMsg)
 	}
@@ -553,13 +572,8 @@ func (mr *MessageRouter) DeleteChannel(id int64) error {
 	return mr.store.DeleteMessageChannel(context.Background(), id)
 }
 
-func (mr *MessageRouter) CreateA2ACard(req *schema.CreateA2ACardRequest) (*schema.A2ACard, error) {
-	card, err := mr.store.CreateA2ACard(context.Background(), req)
-	if err != nil {
-		return nil, err
-	}
-
-	return &schema.A2ACard{
+func (mr *MessageRouter) enrichA2ACard(card *model.A2ACard) *schema.A2ACard {
+	s := &schema.A2ACard{
 		ID:           card.ID,
 		AgentID:      card.AgentID,
 		Name:         card.Name,
@@ -569,7 +583,20 @@ func (mr *MessageRouter) CreateA2ACard(req *schema.CreateA2ACardRequest) (*schem
 		Capabilities: card.Capabilities,
 		IsActive:     card.IsActive,
 		CreatedAt:    card.CreatedAt.Format(time.RFC3339),
-	}, nil
+	}
+	if agent, ok := mr.agentRuntime.GetAgent(card.AgentID); ok {
+		s.AgentName = agent.Name
+	}
+	return s
+}
+
+func (mr *MessageRouter) CreateA2ACard(req *schema.CreateA2ACardRequest) (*schema.A2ACard, error) {
+	card, err := mr.store.CreateA2ACard(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	return mr.enrichA2ACard(card), nil
 }
 
 func (mr *MessageRouter) ListA2ACards(agentID int64) ([]*schema.A2ACard, error) {
@@ -580,17 +607,7 @@ func (mr *MessageRouter) ListA2ACards(agentID int64) ([]*schema.A2ACard, error) 
 
 	result := make([]*schema.A2ACard, 0, len(cards))
 	for _, card := range cards {
-		result = append(result, &schema.A2ACard{
-			ID:           card.ID,
-			AgentID:      card.AgentID,
-			Name:         card.Name,
-			Description:  card.Description,
-			URL:          card.URL,
-			Version:      card.Version,
-			Capabilities: card.Capabilities,
-			IsActive:     card.IsActive,
-			CreatedAt:    card.CreatedAt.Format(time.RFC3339),
-		})
+		result = append(result, mr.enrichA2ACard(card))
 	}
 
 	return result, nil
@@ -602,21 +619,43 @@ func (mr *MessageRouter) GetA2ACard(id int64) (*schema.A2ACard, error) {
 		return nil, err
 	}
 
-	return &schema.A2ACard{
-		ID:           card.ID,
-		AgentID:      card.AgentID,
-		Name:         card.Name,
-		Description:  card.Description,
-		URL:          card.URL,
-		Version:      card.Version,
-		Capabilities: card.Capabilities,
-		IsActive:     card.IsActive,
-		CreatedAt:    card.CreatedAt.Format(time.RFC3339),
-	}, nil
+	return mr.enrichA2ACard(card), nil
+}
+
+func (mr *MessageRouter) UpdateA2ACard(id int64, req *schema.UpdateA2ACardRequest) (*schema.A2ACard, error) {
+	card, err := mr.store.UpdateA2ACard(context.Background(), id, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return mr.enrichA2ACard(card), nil
 }
 
 func (mr *MessageRouter) DeleteA2ACard(id int64) error {
 	return mr.store.DeleteA2ACard(context.Background(), id)
+}
+
+func (mr *MessageRouter) GetChannel(id int64) (*schema.MessageChannel, error) {
+	ch, err := mr.store.GetMessageChannel(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	schemaCh := &schema.MessageChannel{
+		ID:          ch.ID,
+		Name:        ch.Name,
+		AgentID:     ch.AgentID,
+		Kind:        ch.Kind,
+		Description: ch.Description,
+		IsPublic:    ch.IsPublic,
+		Metadata:    ch.Metadata,
+		IsActive:    ch.IsActive,
+		CreatedAt:   ch.CreatedAt,
+		UpdatedAt:   ch.UpdatedAt,
+	}
+	if agent, ok := mr.agentRuntime.GetAgent(ch.AgentID); ok {
+		schemaCh.AgentName = agent.Name
+	}
+	return schemaCh, nil
 }
 
 func (mr *MessageRouter) GetAgentChannels(agentID int64) []*schema.MessageChannel {
@@ -661,8 +700,7 @@ func (mr *MessageRouter) InitAgents() {
 
 func (mr *MessageRouter) processQueue() {
 	for task := range mr.messageQueue {
-		err := mr.deliverMessage(task.ctx, task.msg)
-		task.result <- err
+		mr.deliverMessage(task.ctx, task.msg)
 	}
 }
 

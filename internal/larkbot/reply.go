@@ -133,6 +133,44 @@ func (c *Client) replyWithContent(ctx context.Context, cfg *BotConfig, messageID
 	return nil
 }
 
+// sendMessageWithContent posts a new IM message (file/image) via CreateMessage API.
+// Text replies continue to use replyWithContent on the user's message_id.
+func (c *Client) sendMessageWithContent(ctx context.Context, cfg *BotConfig, target MessageTarget, msgType, content string) error {
+	receiveID, receiveIDType := target.receiveForSend()
+	if receiveID == "" || cfg == nil || cfg.AppID == "" || cfg.AppSecret == "" {
+		return fmt.Errorf("lark send: missing receive_id or bot credentials")
+	}
+	body := larkim.NewCreateMessageReqBodyBuilder().
+		ReceiveId(receiveID).
+		MsgType(msgType).
+		Content(content).
+		Build()
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(receiveIDType).
+		Body(body).
+		Build()
+
+	resp, err := newLarkAPIClient(cfg).Im.Message.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("lark send: api request: %w", err)
+	}
+	if resp == nil || !resp.Success() {
+		code, msg := 0, "unknown error"
+		if resp != nil {
+			code = resp.Code
+			msg = resp.Msg
+		}
+		return fmt.Errorf("lark send: api code=%d msg=%s", code, msg)
+	}
+	logger.Info("larkbot: attachment message sent",
+		"msg_type", msgType,
+		"receive_id_type", receiveIDType,
+		"chat_id", target.ChatID,
+		"open_id", target.OpenID,
+	)
+	return nil
+}
+
 // replyTextMessage kept for callers/tests; routes through replyMessage.
 func (c *Client) replyTextMessage(ctx context.Context, cfg *BotConfig, messageID, text string) error {
 	return c.replyMessage(ctx, cfg, messageID, text)

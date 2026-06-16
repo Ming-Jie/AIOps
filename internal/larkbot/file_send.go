@@ -10,6 +10,7 @@ import (
 
 	"github.com/fisk086/aiops/internal/imoutbound"
 	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/skills"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
@@ -50,10 +51,9 @@ func isImageExt(ext string) bool {
 	return ok
 }
 
-func (c *Client) uploadAndReplyFile(ctx context.Context, cfg *BotConfig, messageID, absPath string) error {
-	messageID = strings.TrimSpace(messageID)
-	if messageID == "" || cfg == nil {
-		return nil
+func (c *Client) uploadAndSendFile(ctx context.Context, cfg *BotConfig, target MessageTarget, absPath string) error {
+	if !target.canSendAttachment() || cfg == nil {
+		return fmt.Errorf("cannot send file: chat_id=%q open_id=%q", target.ChatID, target.OpenID)
 	}
 	info, err := os.Stat(absPath)
 	if err != nil {
@@ -71,6 +71,9 @@ func (c *Client) uploadAndReplyFile(ctx context.Context, cfg *BotConfig, message
 	api := newLarkAPIClient(cfg)
 
 	if isImageExt(ext) {
+		if err := skills.ValidateIMImageFile(absPath); err != nil {
+			return fmt.Errorf("lark image validate: %w", err)
+		}
 		body, err := larkim.NewCreateImagePathReqBodyBuilder().
 			ImageType(larkim.CreateImageImageTypeMessage).
 			ImagePath(absPath).
@@ -93,7 +96,7 @@ func (c *Client) uploadAndReplyFile(ctx context.Context, cfg *BotConfig, message
 		if err != nil {
 			return err
 		}
-		return c.replyWithContent(ctx, cfg, messageID, "image", content)
+		return c.sendMessageWithContent(ctx, cfg, target, "image", content)
 	}
 
 	body, err := larkim.NewCreateFilePathReqBodyBuilder().
@@ -119,7 +122,7 @@ func (c *Client) uploadAndReplyFile(ctx context.Context, cfg *BotConfig, message
 	if err != nil {
 		return err
 	}
-	return c.replyWithContent(ctx, cfg, messageID, "file", content)
+	return c.sendMessageWithContent(ctx, cfg, target, "file", content)
 }
 
 func larkFileContent(fileKey string) (string, error) {
@@ -138,28 +141,37 @@ func larkImageContent(imageKey string) (string, error) {
 	return string(b), nil
 }
 
-func (c *Client) sendOutboundFiles(ctx context.Context, cfg *BotConfig, messageID string, scope imoutbound.Scope, names []string) {
+func (c *Client) sendOutboundFiles(ctx context.Context, cfg *BotConfig, target MessageTarget, scope imoutbound.Scope, names []string) {
 	if c.outbound == nil {
 		c.outbound = imoutbound.GlobalStore()
+	}
+	if !target.canSendAttachment() {
+		logger.Error("larkbot: cannot send attachments — missing chat_id and open_id", "files", names)
+		return
 	}
 	const maxFilesPerReply = 5
 	if len(names) > maxFilesPerReply {
 		names = names[:maxFilesPerReply]
 	}
+	var missing []string
 	for _, name := range names {
-		abs, err := c.outbound.ResolveFile(scope, name)
+		abs, err := skills.ResolveIMAttachmentPath(c.outbound, scope, name)
 		if err != nil {
 			logger.Warn("larkbot: outbound file resolve failed", "file", name, "err", err)
+			missing = append(missing, name)
 			continue
 		}
-		if err := c.uploadAndReplyFile(ctx, cfg, messageID, abs); err != nil {
+		if err := c.uploadAndSendFile(ctx, cfg, target, abs); err != nil {
 			logger.Warn("larkbot: send file failed", "file", name, "err", err)
+			missing = append(missing, name)
 		} else {
-			logger.Info("larkbot: file sent", "file", name, "message_id", messageID)
+			logger.Info("larkbot: file sent via create message", "file", name, "chat_id", target.ChatID)
 		}
 	}
-}
-
-func larkFileSendSystemHint() string {
-	return `（系统提示）当前为飞书 IM 对话。若用户需要可下载/保存的文件，请使用工具 builtin_im_save_file 写入文件，并在最终回复中**原样保留**工具返回的 [[lark_file:文件名]] 标记（可多个）。机器人会自动上传并以文件/图片消息发送。纯文本说明可与标记同条回复。`
+	if len(missing) > 0 && target.canReplyText() {
+		notice := fmt.Sprintf("以下附件未能发送（文件不存在或已过期）：%s", strings.Join(missing, ", "))
+		if err := c.replyMessage(ctx, cfg, target.ReplyMessageID, notice); err != nil {
+			logger.Warn("larkbot: attachment failure notice send failed", "err", err)
+		}
+	}
 }

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -41,7 +42,7 @@ func (r *Runtime) SetDefaultChatModelName(name string) {
 	r.defaultChatModelName = strings.TrimSpace(name)
 }
 
-func (r *Runtime) flushTokenUsage(agent *schema.AgentWithRuntime, auditUserID string, acc *usageAccumulator) {
+func (r *Runtime) flushTokenUsage(ctx context.Context, agent *schema.AgentWithRuntime, auditUserID string, acc *usageAccumulator) {
 	if r.usageSink == nil || acc == nil || agent == nil {
 		return
 	}
@@ -52,8 +53,11 @@ func (r *Runtime) flushTokenUsage(agent *schema.AgentWithRuntime, auditUserID st
 	if total == 0 {
 		total = acc.prompt + acc.completion
 	}
-	modelName := strings.TrimSpace(r.defaultChatModelName)
-	if agent.RuntimeProfile != nil && strings.TrimSpace(agent.RuntimeProfile.LlmModel) != "" {
+	modelName := ""
+	if s, ok := ctx.Value(usageCtxKey{}).(*usageSession); ok && s != nil && s.modelName != "" {
+		modelName = s.modelName
+	}
+	if modelName == "" && agent.RuntimeProfile != nil && strings.TrimSpace(agent.RuntimeProfile.LlmModel) != "" {
 		modelName = strings.TrimSpace(agent.RuntimeProfile.LlmModel)
 	}
 	if modelName == "" {

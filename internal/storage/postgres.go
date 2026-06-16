@@ -81,10 +81,20 @@ END $$;`,
 			category VARCHAR(100),
 			is_builtin BOOLEAN DEFAULT false,
 			is_active BOOLEAN DEFAULT true,
+			created_by BIGINT REFERENCES users(id),
 			created_at TIMESTAMP DEFAULT NOW(),
 			updated_at TIMESTAMP DEFAULT NOW()
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_public_id ON agents(public_id)`,
+		`DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'agents' AND column_name = 'created_by'
+	) THEN
+		ALTER TABLE agents ADD COLUMN created_by BIGINT REFERENCES users(id);
+	END IF;
+END $$;`,
 		`CREATE TABLE IF NOT EXISTS agent_runtime (
 			id BIGSERIAL PRIMARY KEY,
 			agent_id BIGINT REFERENCES agents(id) ON DELETE CASCADE,
@@ -146,6 +156,7 @@ END $$;`,
 			risk_level VARCHAR(32) DEFAULT 'low',
 			execution_mode VARCHAR(64) DEFAULT '',
 			prompt_hint TEXT DEFAULT '',
+			created_by BIGINT DEFAULT 0,
 			updated_at TIMESTAMPTZ DEFAULT NOW(),
 			created_at TIMESTAMP DEFAULT NOW()
 		)`,
@@ -159,6 +170,7 @@ END $$;`,
 			is_active BOOLEAN DEFAULT true,
 			health_status VARCHAR(50) DEFAULT 'unknown',
 			tool_count INT DEFAULT 0,
+			created_by BIGINT DEFAULT 0,
 			created_at TIMESTAMP DEFAULT NOW()
 		)`,
 		`CREATE TABLE IF NOT EXISTS learnings (
@@ -318,6 +330,13 @@ END $$;`,
 			created_at TIMESTAMPTZ DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles(user_id)`,
+		`CREATE TABLE IF NOT EXISTS agent_chat_users (
+			agent_id BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			created_by BIGINT NOT NULL REFERENCES users(id),
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			PRIMARY KEY (agent_id, user_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS message_channels (
 			id BIGSERIAL PRIMARY KEY,
 			name VARCHAR(255) NOT NULL,
@@ -538,6 +557,10 @@ END $$;`,
 		`ALTER TABLE agent_runtime ADD COLUMN IF NOT EXISTS model_config_id BIGINT DEFAULT 0`,
 		`ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`,
 		`ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS purpose VARCHAR(20) NOT NULL DEFAULT 'chat'`,
+		`ALTER TABLE skills ADD COLUMN IF NOT EXISTS created_by BIGINT DEFAULT 0`,
+		`ALTER TABLE mcp_configs ADD COLUMN IF NOT EXISTS created_by BIGINT DEFAULT 0`,
+		`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS reset_policy VARCHAR(20) DEFAULT 'none'`,
+		`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS idle_timeout_minutes INT DEFAULT 30`,
 	)
 
 	for _, query := range migrations {

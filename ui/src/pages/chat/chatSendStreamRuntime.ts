@@ -112,11 +112,22 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
     typewriterRaf = requestAnimationFrame(tickTypewriter)
   }
 
+  let lastThoughtStepsLength = -1
+  let pendingScroll = false
+  const scheduleScroll = (): void => {
+    if (pendingScroll) return
+    pendingScroll = true
+    void requestAnimationFrame(() => {
+      pendingScroll = false
+      scrollChatToBottom()
+    })
+  }
+
   const applyParsed = (parsedContent: string, isFinal: boolean): void => {
     if (isGroupChat) {
       stampAssistantTimeOnce()
       if (!isFinal) {
-        scrollChatToBottom()
+        scheduleScroll()
       }
       return
     }
@@ -135,12 +146,16 @@ export function createSendStreamLifecycle (deps: CreateSendStreamLifecycleDeps) 
     } else if (shownLen < parsedContent.length) {
       scheduleTypewriter()
     }
-    row.reactSteps = cloneThoughtStepsSnapshot(thoughtSteps.value)
+    // 仅当 thoughtSteps 真正变化时才深克隆，避免每个 chunk 触发 v-for 重 diff
+    if (thoughtSteps.value.length !== lastThoughtStepsLength) {
+      row.reactSteps = cloneThoughtStepsSnapshot(thoughtSteps.value)
+      lastThoughtStepsLength = thoughtSteps.value.length
+    }
     if (parsedContent.trim() !== '') {
       stampAssistantTimeOnce()
     }
     if (!isFinal) {
-      scrollChatToBottom()
+      scheduleScroll()
     }
   }
 

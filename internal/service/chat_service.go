@@ -21,6 +21,7 @@ import (
 	"github.com/fisk086/aiops/internal/logger"
 	"github.com/fisk086/aiops/internal/memory"
 	"github.com/fisk086/aiops/internal/schema"
+	"github.com/fisk086/aiops/internal/skills"
 	"github.com/fisk086/aiops/internal/storage"
 )
 
@@ -41,7 +42,8 @@ func NewChatService(runtime *agent.Runtime, store storage.Storage, mem memory.Pr
 	if vectorDim <= 0 {
 		vectorDim = 1536
 	}
-	return &ChatService{runtime: runtime, store: store, memory: mem, embed: embed, workflows: workflows, kb: kb, vectorDim: vectorDim}
+	svc := &ChatService{runtime: runtime, store: store, memory: mem, embed: embed, workflows: workflows, kb: kb, vectorDim: vectorDim}
+	return svc
 }
 
 func (s *ChatService) GetAgent(ctx context.Context, agentID int64) (*schema.Agent, error) {
@@ -286,7 +288,14 @@ func (s *ChatService) isStreamEnabled(ctx context.Context, agentID int64) bool {
 	return agent.RuntimeProfile.StreamEnabled
 }
 
-// retrieveHistory fetches previous conversation messages for the session.
+const (
+	compressThreshold = iota + 30 // compress when history exceeds this many messages
+	compressHeadCount = 5         // keep first N messages verbatim
+	compressTailCount = 15        // keep last N messages verbatim
+)
+
+// retrieveHistory fetches previous conversation messages for the session,
+// compressing middle messages when the history exceeds compressThreshold.
 func (s *ChatService) retrieveHistory(ctx context.Context, sessionID string, limit int) []*einoschema.Message {
 	if s.store == nil || sessionID == "" {
 		return nil
@@ -295,7 +304,33 @@ func (s *ChatService) retrieveHistory(ctx context.Context, sessionID string, lim
 	if err != nil || len(msgs) == 0 {
 		return nil
 	}
-	return chathistory.ToEinoMessages(msgs)
+	einoMsgs := chathistory.ToEinoMessages(msgs)
+	if len(einoMsgs) <= compressThreshold {
+		return einoMsgs
+	}
+	return s.compressHistory(ctx, einoMsgs)
+}
+
+// compressHistory compresses middle messages using the chat model.
+func (s *ChatService) compressHistory(ctx context.Context, msgs []*einoschema.Message) []*einoschema.Message {
+	head := msgs[:compressHeadCount]
+	tail := msgs[len(msgs)-compressTailCount:]
+	middle := msgs[compressHeadCount : len(msgs)-compressTailCount]
+
+	summary, err := s.runtime.SummarizeMessages(ctx, middle)
+	if err != nil {
+		logger.Warn("context compression failed, returning truncated history", "err", err)
+		return append(append([]*einoschema.Message{}, head...), tail...)
+	}
+
+	result := make([]*einoschema.Message, 0, compressHeadCount+1+compressTailCount)
+	result = append(result, head...)
+	result = append(result, &einoschema.Message{
+		Role:    einoschema.System,
+		Content: "以下是对话历史中间部分（较早期的对话）的摘要：\n" + summary,
+	})
+	result = append(result, tail...)
+	return result
 }
 
 // attachmentExtraFromRequest builds agent_memory.extra (image_urls / file_urls) for history API.
@@ -614,6 +649,10 @@ func sseIndicatesClientToolHandoff(raw []byte) bool {
 	return bytes.Contains(raw, []byte("client_tool_call"))
 }
 
+func sseHasFileAttachments(raw []byte) bool {
+	return bytes.Contains(raw, []byte(`"attachments"`)) && bytes.Contains(raw, []byte(`"filename"`))
+}
+
 // finalizeAssistantForPersistence ensures we never persist a user turn without an assistant line when memory is on:
 // missing [DONE], broken reads, or empty parsed text get a safe placeholder; synthetic failure lines skip profile embedding.
 func finalizeAssistantForPersistence(raw []byte, parsed string, readErr error) (assistant string, updateProfile bool) {
@@ -638,6 +677,9 @@ func finalizeAssistantForPersistence(raw []byte, parsed string, readErr error) (
 	if trimmed == "" {
 		if sseIndicatesClientToolHandoff(raw) {
 			return "", false
+		}
+		if sseHasFileAttachments(raw) {
+			return skills.WebContentOmittedFallback, true
 		}
 		return agent.StreamFailureMessageGeneric, false
 	}
@@ -721,17 +763,27 @@ func parseSSEAssistantPayload(raw []byte) string {
 	out := acc.String()
 	trimOut := strings.TrimSpace(out)
 	trimFinal := strings.TrimSpace(finalAnswer)
-	if trimOut != "" {
-		// If the only accumulated visible text is our generic failure placeholder but a later
-		// final_answer carried the real reply, prefer final_answer for persistence (avoids DB row
-		// stuck on the apology line while the client had shown the full answer).
-		if agent.IsSyntheticStreamFailureAssistant(trimOut) && trimFinal != "" &&
-			!agent.IsSyntheticStreamFailureAssistant(trimFinal) {
-			return finalAnswer
-		}
-		return out
+	sanitizedAcc := skills.SanitizeWebAssistantText(out)
+	sanitizedFinal := skills.SanitizeWebAssistantText(finalAnswer)
+	return pickPersistedWebAssistantText(trimOut, trimFinal, sanitizedAcc, sanitizedFinal)
+}
+
+func pickPersistedWebAssistantText(trimAccRaw, trimFinalRaw, sanitizedAcc, sanitizedFinal string) string {
+	if agent.IsSyntheticStreamFailureAssistant(trimAccRaw) && strings.TrimSpace(sanitizedFinal) != "" &&
+		!agent.IsSyntheticStreamFailureAssistant(trimFinalRaw) {
+		return sanitizedFinal
 	}
-	return finalAnswer
+	// Token acc may be tool echo / inline file body stripped to fallback while final_answer has the real one-liner.
+	if strings.TrimSpace(sanitizedFinal) != "" {
+		if strings.TrimSpace(sanitizedAcc) == "" ||
+			(sanitizedAcc == skills.WebContentOmittedFallback && trimFinalRaw != "" && trimAccRaw != trimFinalRaw) {
+			return sanitizedFinal
+		}
+	}
+	if strings.TrimSpace(sanitizedAcc) != "" {
+		return sanitizedAcc
+	}
+	return sanitizedFinal
 }
 
 func (s *ChatService) GetCapabilities(agentID int64) []schema.Capability {
@@ -744,7 +796,7 @@ func (s *ChatService) CreateChatSession(ctx context.Context, agentID int64, user
 
 // ResolveOrCreateChatSession returns an existing session_id when the client omitted one:
 // reuse the user's most recent session for this agent so multi-turn memory stays in one thread.
-// Creates a new session only when none exists yet.
+// Creates a new session only when none exists yet, or when the existing session's reset policy requires it.
 func (s *ChatService) ResolveOrCreateChatSession(ctx context.Context, agentID int64, userID string) (string, error) {
 	if s.store == nil || agentID < 1 || strings.TrimSpace(userID) == "" {
 		return "", nil
@@ -754,13 +806,51 @@ func (s *ChatService) ResolveOrCreateChatSession(ctx context.Context, agentID in
 		return "", err
 	}
 	if len(list) > 0 && strings.TrimSpace(list[0].SessionID) != "" {
-		return list[0].SessionID, nil
+		sess := list[0]
+		if !s.shouldResetSession(&sess) {
+			return sess.SessionID, nil
+		}
 	}
 	sess, err := s.store.CreateChatSession(ctx, agentID, userID, 0)
 	if err != nil {
 		return "", err
 	}
 	return sess.SessionID, nil
+}
+
+// shouldResetSession checks whether a session should be reset based on its policy.
+func (s *ChatService) shouldResetSession(sess *schema.ChatSession) bool {
+	policy := strings.ToLower(strings.TrimSpace(sess.ResetPolicy))
+	if policy == "" || policy == "none" {
+		return false
+	}
+	now := time.Now()
+	switch policy {
+	case "idle":
+		timeout := time.Duration(sess.IdleTimeoutMinutes) * time.Minute
+		if timeout <= 0 {
+			timeout = 30 * time.Minute
+		}
+		return sess.UpdatedAt.Add(timeout).Before(now)
+	case "daily":
+		y1, m1, d1 := sess.UpdatedAt.Date()
+		y2, m2, d2 := now.Date()
+		return y1 != y2 || m1 != m2 || d1 != d2
+	case "both":
+		timeout := time.Duration(sess.IdleTimeoutMinutes) * time.Minute
+		if timeout <= 0 {
+			timeout = 30 * time.Minute
+		}
+		idleExpired := sess.UpdatedAt.Add(timeout).Before(now)
+		dayChanged := false
+		if !idleExpired {
+			y1, m1, d1 := sess.UpdatedAt.Date()
+			y2, m2, d2 := now.Date()
+			dayChanged = y1 != y2 || m1 != m2 || d1 != d2
+		}
+		return idleExpired || dayChanged
+	}
+	return false
 }
 
 func (s *ChatService) ListChatSessions(ctx context.Context, agentID int64, userID string, limit, offset int) ([]schema.ChatSession, error) {

@@ -2,15 +2,18 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/fisk086/aiops/internal/auth"
 	"github.com/fisk086/aiops/internal/dingtalkbot"
 	"github.com/fisk086/aiops/internal/logger"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 type DingtalkBotStatus struct {
@@ -20,26 +23,56 @@ type DingtalkBotStatus struct {
 	IsRunning bool   `json:"is_running"`
 }
 
-func NewDingtalkBotController(agentService *service.AgentService) *DingtalkBotController {
-	return &DingtalkBotController{agentService: agentService}
+func NewDingtalkBotController(agentService *service.AgentService, jwtCfg auth.JWTConfig, userStore storage.UserStore, rbacService ...*service.RBACService) *DingtalkBotController {
+	ctrl := &DingtalkBotController{agentService: agentService, jwtCfg: jwtCfg, userStore: userStore}
+	if len(rbacService) > 0 {
+		ctrl.rbacService = rbacService[0]
+	}
+	return ctrl
 }
 
 type DingtalkBotController struct {
 	agentService *service.AgentService
+	jwtCfg       auth.JWTConfig
+	userStore    storage.UserStore
+	rbacService  *service.RBACService
+}
+
+func (c *DingtalkBotController) getUserForMiddleware(userID int64) (*auth.User, error) {
+	if c.userStore == nil {
+		return nil, errors.New("user store not configured")
+	}
+	user, err := c.userStore.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.User{
+		ID:       user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		Status:   string(user.Status),
+		IsAdmin:  user.IsAdmin,
+	}, nil
 }
 
 func (c *DingtalkBotController) RegisterRoutes(r *server.Hertz) {
-	r.GET("/api/v1/dingtalkbots", c.ListBots)
-	r.POST("/api/v1/dingtalkbots/start", c.Start)
-	r.POST("/api/v1/dingtalkbots/stop", c.Stop)
-	r.POST("/api/v1/dingtalkbots/:agentId/register", c.RegisterForAgent)
-	r.POST("/api/v1/dingtalkbots/:agentId/ws/start", c.StartAgentWS)
-	r.POST("/api/v1/dingtalkbots/:agentId/ws/stop", c.StopAgentWS)
-	r.DELETE("/api/v1/dingtalkbots/:agentId", c.UnregisterForAgent)
+	g := r.Group("/api/v1")
+	if c.userStore != nil {
+		g.Use(auth.JWTMiddleware(c.jwtCfg, c.getUserForMiddleware))
+	}
+	g.GET("/dingtalkbots", c.ListBots)
+	g.POST("/dingtalkbots/start", c.Start)
+	g.POST("/dingtalkbots/stop", c.Stop)
+	g.POST("/dingtalkbots/:agentId/register", c.RegisterForAgent)
+	g.POST("/dingtalkbots/:agentId/ws/start", c.StartAgentWS)
+	g.POST("/dingtalkbots/:agentId/ws/stop", c.StopAgentWS)
+	g.DELETE("/dingtalkbots/:agentId", c.UnregisterForAgent)
 }
 
 func (c *DingtalkBotController) ListBots(ctx context.Context, hc *app.RequestContext) {
 	client := dingtalkbot.Global()
+
+	user := auth.GetCurrentUser(hc)
 
 	var entries []DingtalkBotStatus
 	if c.agentService != nil {
@@ -51,6 +84,11 @@ func (c *DingtalkBotController) ListBots(ctx context.Context, hc *app.RequestCon
 		for _, a := range agents {
 			if a == nil {
 				continue
+			}
+			if c.rbacService != nil && user != nil && !user.IsAdmin {
+				if !c.rbacService.CheckAgentAccess(ctx, user.ID, a.Name, user.IsAdmin) {
+					continue
+				}
 			}
 			full, err := c.agentService.GetAgent(a.ID)
 			if err != nil || full == nil || full.RuntimeProfile == nil {
@@ -126,7 +164,14 @@ func (c *DingtalkBotController) Start(ctx context.Context, hc *app.RequestContex
 		return
 	}
 	c.persistAllDingtalkWsEnabled(true)
-	go client.Start(ctx)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("dingtalkbot start panicked", "recover", r)
+			}
+		}()
+		client.Start(ctx)
+	}()
 	hc.JSON(http.StatusOK, schema.SuccessResponse(map[string]any{
 		"started":   true,
 		"bot_count": client.GetBotCount(),

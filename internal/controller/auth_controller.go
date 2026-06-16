@@ -252,7 +252,9 @@ func (ctrl *AuthController) Login(ctx context.Context, c *app.RequestContext) {
 	}
 
 	now := time.Now()
-	_ = ctrl.userStore.UpdateLastLogin(user.ID, now)
+	if err := ctrl.userStore.UpdateLastLogin(user.ID, now); err != nil {
+		logger.Warn("failed to update last login", "user_id", user.ID, "err", err)
+	}
 
 	accessToken, err := auth.GenerateAccessToken(ctrl.jwtCfg, user.ID, user.Username)
 	if err != nil {

@@ -2,15 +2,18 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/fisk086/aiops/internal/auth"
 	"github.com/fisk086/aiops/internal/larkbot"
 	"github.com/fisk086/aiops/internal/logger"
 	"github.com/fisk086/aiops/internal/schema"
 	"github.com/fisk086/aiops/internal/service"
+	"github.com/fisk086/aiops/internal/storage"
 )
 
 type LarkBotStatus struct {
@@ -20,27 +23,57 @@ type LarkBotStatus struct {
 	IsRunning  bool   `json:"is_running"`
 }
 
-func NewLarkBotController(agentService *service.AgentService) *LarkBotController {
-	return &LarkBotController{agentService: agentService}
+func NewLarkBotController(agentService *service.AgentService, jwtCfg auth.JWTConfig, userStore storage.UserStore, rbacService ...*service.RBACService) *LarkBotController {
+	ctrl := &LarkBotController{agentService: agentService, jwtCfg: jwtCfg, userStore: userStore}
+	if len(rbacService) > 0 {
+		ctrl.rbacService = rbacService[0]
+	}
+	return ctrl
 }
 
 type LarkBotController struct {
 	agentService *service.AgentService
+	jwtCfg       auth.JWTConfig
+	userStore    storage.UserStore
+	rbacService  *service.RBACService
+}
+
+func (c *LarkBotController) getUserForMiddleware(userID int64) (*auth.User, error) {
+	if c.userStore == nil {
+		return nil, errors.New("user store not configured")
+	}
+	user, err := c.userStore.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.User{
+		ID:       user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		Status:   string(user.Status),
+		IsAdmin:  user.IsAdmin,
+	}, nil
 }
 
 func (c *LarkBotController) RegisterRoutes(r *server.Hertz) {
-	r.GET("/api/v1/larkbots", c.ListBots)
-	r.POST("/api/v1/larkbots/start", c.Start)
-	r.POST("/api/v1/larkbots/stop", c.Stop)
-	r.POST("/api/v1/larkbots/refresh", c.Refresh)
-	r.POST("/api/v1/larkbots/:agentId/register", c.RegisterForAgent)
-	r.POST("/api/v1/larkbots/:agentId/ws/start", c.StartAgentWS)
-	r.POST("/api/v1/larkbots/:agentId/ws/stop", c.StopAgentWS)
-	r.DELETE("/api/v1/larkbots/:agentId", c.UnregisterForAgent)
+	g := r.Group("/api/v1")
+	if c.userStore != nil {
+		g.Use(auth.JWTMiddleware(c.jwtCfg, c.getUserForMiddleware))
+	}
+	g.GET("/larkbots", c.ListBots)
+	g.POST("/larkbots/start", c.Start)
+	g.POST("/larkbots/stop", c.Stop)
+	g.POST("/larkbots/refresh", c.Refresh)
+	g.POST("/larkbots/:agentId/register", c.RegisterForAgent)
+	g.POST("/larkbots/:agentId/ws/start", c.StartAgentWS)
+	g.POST("/larkbots/:agentId/ws/stop", c.StopAgentWS)
+	g.DELETE("/larkbots/:agentId", c.UnregisterForAgent)
 }
 
 func (c *LarkBotController) ListBots(ctx context.Context, hc *app.RequestContext) {
 	client := larkbot.Global()
+
+	user := auth.GetCurrentUser(hc)
 
 	var entries []LarkBotStatus
 	if c.agentService != nil {
@@ -52,6 +85,11 @@ func (c *LarkBotController) ListBots(ctx context.Context, hc *app.RequestContext
 		for _, a := range agents {
 			if a == nil {
 				continue
+			}
+			if c.rbacService != nil && user != nil && !user.IsAdmin {
+				if !c.rbacService.CheckAgentAccess(ctx, user.ID, a.Name, user.IsAdmin) {
+					continue
+				}
 			}
 			full, err := c.agentService.GetAgent(a.ID)
 			if err != nil || full == nil || full.RuntimeProfile == nil {
@@ -131,6 +169,11 @@ func (c *LarkBotController) Start(ctx context.Context, hc *app.RequestContext) {
 	c.persistAllLarkWsEnabled(true)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("larkbot start panicked", "recover", r)
+			}
+		}()
 		client.Start(ctx)
 	}()
 

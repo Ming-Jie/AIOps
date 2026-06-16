@@ -15,6 +15,7 @@ type usageSession struct {
 	acc         *usageAccumulator
 	agent       *schema.AgentWithRuntime
 	auditUserID string
+	modelName   string
 }
 
 // withUsageTracking attaches a fresh usage session to ctx. Call flushUsageSession when the request ends.
@@ -46,11 +47,18 @@ func usageAccumulateFromContext(ctx context.Context, msg *einoschema.Message) {
 	s.acc.addMessage(msg)
 }
 
+func setUsageModelName(ctx context.Context, modelName string) {
+	s, _ := ctx.Value(usageCtxKey{}).(*usageSession)
+	if s != nil && modelName != "" {
+		s.modelName = modelName
+	}
+}
+
 // flushUsageSession persists aggregated tokens for this request (no-op if no session or sink).
 func (r *Runtime) flushUsageSession(ctx context.Context) {
 	s, _ := ctx.Value(usageCtxKey{}).(*usageSession)
 	if s == nil {
 		return
 	}
-	r.flushTokenUsage(s.agent, s.auditUserID, s.acc)
+	r.flushTokenUsage(ctx, s.agent, s.auditUserID, s.acc)
 }

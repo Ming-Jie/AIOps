@@ -1,10 +1,11 @@
 <template>
   <q-layout view="hHh Lpr lFf">
-    <q-header elevated class="bg-primary text-white">
+    <q-header elevated class="bg-ai-gradient text-white header-main">
       <q-toolbar>
         <q-btn flat dense round icon="menu" aria-label="Menu" @click="leftDrawer = !leftDrawer" />
-        <q-toolbar-title>
-          {{ t('appTitle') }}
+        <q-toolbar-title class="row items-center q-gutter-x-sm">
+          <q-icon name="auto_awesome" size="sm" class="header-sparkle" />
+          <span>{{ t('appTitle') }}</span>
         </q-toolbar-title>
         <q-space />
         <q-btn-dropdown
@@ -45,104 +46,122 @@
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-model="leftDrawer" show-if-above bordered class="bg-grey-1 main-layout-drawer" :width="240">
+    <q-drawer v-model="leftDrawer" show-if-above bordered class="main-layout-drawer bg-white" :width="240">
       <div class="column no-wrap fit">
         <q-scroll-area class="main-layout-drawer-scroll col">
-          <q-list padding>
-            <q-item clickable v-ripple :to="{ name: 'dashboard' }" exact>
+          <q-list padding class="q-mt-xs">
+            <q-item clickable v-ripple :to="{ name: 'dashboard' }" exact active-class="drawer-item-active">
               <q-item-section avatar>
                 <q-icon name="dashboard" />
               </q-item-section>
               <q-item-section>{{ t('dashboard') }}</q-item-section>
             </q-item>
-            <q-item clickable v-ripple :to="{ name: 'chat' }">
+            <q-item clickable v-ripple :to="{ name: 'agents' }" active-class="drawer-item-active">
+              <q-item-section avatar>
+                <q-icon name="smart_toy" />
+              </q-item-section>
+              <q-item-section>{{ t('agents') }}</q-item-section>
+            </q-item>
+            <q-item clickable v-ripple :to="{ name: 'chat' }" active-class="drawer-item-active">
               <q-item-section avatar>
                 <q-icon name="chat" />
               </q-item-section>
               <q-item-section>{{ t('chat') }}</q-item-section>
             </q-item>
-            <q-item clickable v-ripple :to="{ name: 'channels' }">
+            <q-item clickable v-ripple :to="{ name: 'channels' }" active-class="drawer-item-active">
               <q-item-section avatar>
                 <q-icon name="notifications" />
               </q-item-section>
               <q-item-section>{{ t('channels') }}</q-item-section>
             </q-item>
-            <q-item clickable v-ripple :to="{ name: 'approvals' }">
+            <q-item clickable v-ripple :to="{ name: 'approvals' }" active-class="drawer-item-active">
               <q-item-section avatar>
                 <q-icon name="approval" />
               </q-item-section>
               <q-item-section>{{ t('approvals') }}</q-item-section>
             </q-item>
-            <q-item clickable v-ripple :to="{ name: 'schedules' }">
+            <q-item clickable v-ripple :to="{ name: 'schedules' }" active-class="drawer-item-active">
               <q-item-section avatar>
                 <q-icon name="schedule" />
               </q-item-section>
               <q-item-section>{{ t('schedules') }}</q-item-section>
             </q-item>
-            <q-item clickable v-ripple :to="{ name: 'knowledge' }">
+            <q-item clickable v-ripple :to="{ name: 'teams' }" :active="isTeamsNavActive" active-class="drawer-item-active">
+              <q-item-section avatar>
+                <q-icon name="groups" />
+              </q-item-section>
+              <q-item-section>{{ t('teams') }}</q-item-section>
+            </q-item>
+            <q-item clickable v-ripple :to="{ name: 'knowledge' }" :active="isKnowledgeNavActive" active-class="drawer-item-active">
               <q-item-section avatar>
                 <q-icon name="menu_book" />
               </q-item-section>
               <q-item-section>{{ t('knowledge') }}</q-item-section>
             </q-item>
-
+            <q-item clickable v-ripple :to="{ name: 'skills' }" active-class="drawer-item-active">
+              <q-item-section avatar>
+                <q-icon name="build" />
+              </q-item-section>
+              <q-item-section>{{ t('skills') }}</q-item-section>
+            </q-item>
+            <q-item clickable v-ripple :to="{ name: 'mcp' }" active-class="drawer-item-active">
+              <q-item-section avatar>
+                <q-icon name="hub" />
+              </q-item-section>
+              <q-item-section>{{ t('mcp') }}</q-item-section>
+            </q-item>
+            <q-item clickable v-ripple :to="{ name: 'workflows' }" active-class="drawer-item-active">
+              <q-item-section avatar>
+                <q-icon name="account_tree" />
+              </q-item-section>
+              <q-item-section>{{ t('workflows') }}</q-item-section>
+            </q-item>
+            <q-item clickable v-ripple :to="{ name: 'bots' }" active-class="drawer-item-active">
+              <q-item-section avatar>
+                <q-icon name="smart_toy" />
+              </q-item-section>
+              <q-item-section>{{ t('botTitle') }}</q-item-section>
+            </q-item>
             <template v-if="meLoaded && isAdmin">
               <q-separator class="q-my-sm" />
-              <q-item clickable v-ripple :to="{ name: 'agents' }">
-                <q-item-section avatar>
-                  <q-icon name="smart_toy" />
-                </q-item-section>
-                <q-item-section>{{ t('agents') }}</q-item-section>
-              </q-item>
-              <q-item clickable v-ripple :to="{ name: 'skills' }">
-                <q-item-section avatar>
-                  <q-icon name="build" />
-                </q-item-section>
-                <q-item-section>{{ t('skills') }}</q-item-section>
-              </q-item>
-              <q-item clickable v-ripple :to="{ name: 'mcp' }">
-                <q-item-section avatar>
-                  <q-icon name="hub" />
-                </q-item-section>
-                <q-item-section>{{ t('mcp') }}</q-item-section>
-              </q-item>
-              <q-item clickable v-ripple :to="{ name: 'models' }">
+              <q-item-label header class="text-uppercase text-caption text-grey-5 q-px-md q-mt-sm q-mb-xs" style="font-weight: 600; letter-spacing: 0.06em;">{{ t('admin') }}</q-item-label>
+              <q-item clickable v-ripple :to="{ name: 'models' }" active-class="drawer-item-active">
                 <q-item-section avatar>
                   <q-icon name="model_training" />
                 </q-item-section>
                 <q-item-section>{{ t('models') }}</q-item-section>
               </q-item>
-              <q-item clickable v-ripple :to="{ name: 'bots' }">
+              <!-- q-item clickable v-ripple :to="{ name: 'guardrails' }">
+                  <q-item-section avatar>
+                    <q-icon name="shield" />
+                  </q-item-section>
+                  <q-item-section>{{ t('guardrails') }}</q-item-section>
+                </q-item -->
+              <q-item clickable v-ripple :to="{ name: 'eval' }" active-class="drawer-item-active">
                 <q-item-section avatar>
-                  <q-icon name="hub" />
+                  <q-icon name="fact_check" />
                 </q-item-section>
-                <q-item-section>{{ t('botTitle') }}</q-item-section>
+                <q-item-section>{{ t('eval') }}</q-item-section>
               </q-item>
-              <q-item clickable v-ripple :to="{ name: 'workflows' }">
-                <q-item-section avatar>
-                  <q-icon name="account_tree" />
-                </q-item-section>
-                <q-item-section>{{ t('workflows') }}</q-item-section>
-              </q-item>
-              <q-item clickable v-ripple :to="{ name: 'audit-logs' }">
+              <q-item clickable v-ripple :to="{ name: 'audit-logs' }" active-class="drawer-item-active">
                 <q-item-section avatar>
                   <q-icon name="receipt_long" />
                 </q-item-section>
                 <q-item-section>{{ t('auditLogs') }}</q-item-section>
               </q-item>
-              <q-item clickable v-ripple :to="{ name: 'roles' }">
+              <q-item clickable v-ripple :to="{ name: 'roles' }" active-class="drawer-item-active">
                 <q-item-section avatar>
                   <q-icon name="supervisor_account" />
                 </q-item-section>
                 <q-item-section>{{ t('roles') }}</q-item-section>
               </q-item>
-              <q-item clickable v-ripple :to="{ name: 'users' }">
+              <q-item clickable v-ripple :to="{ name: 'users' }" active-class="drawer-item-active">
                 <q-item-section avatar>
                   <q-icon name="people" />
                 </q-item-section>
                 <q-item-section>{{ t('users') }}</q-item-section>
               </q-item>
-              <q-item clickable v-ripple :to="{ name: 'usage' }">
+              <q-item clickable v-ripple :to="{ name: 'usage' }" active-class="drawer-item-active">
                 <q-item-section avatar>
                   <q-icon name="insights" />
                 </q-item-section>
@@ -169,8 +188,12 @@
       </div>
     </q-drawer>
 
-    <q-page-container class="main-layout-page-container" style="background-color: #f8f7f4;">
-      <router-view />
+    <q-page-container class="main-layout-page-container">
+      <router-view v-slot="{ Component }">
+        <transition name="page-fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
     </q-page-container>
   </q-layout>
 </template>
@@ -182,13 +205,52 @@ defineOptions({
   name: 'MainLayout'
 })
 
-const { t, locale, setLocale, leftDrawer, userLabel, avatarUrl, meLoaded, isAdmin, onLogout, goProfile } = useMainLayout()
+const {
+  t, locale, setLocale, leftDrawer, userLabel, avatarUrl, meLoaded, isAdmin,
+  isTeamsNavActive, isKnowledgeNavActive,
+  onLogout, goProfile
+} = useMainLayout()
 </script>
 
 <style scoped>
+.header-main {
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.2) !important;
+}
+.header-sparkle {
+  animation: sparkle-pulse 2s ease-in-out infinite;
+}
+@keyframes sparkle-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(0.9); }
+}
+.main-layout-drawer {
+  border-right: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.06));
+}
 .main-layout-drawer-scroll {
   flex: 1 1 0;
   min-height: 0;
+  /* 让 q-list 内部项目有更舒服的间距 */
+  :deep(.q-item) {
+    border-radius: var(--radius-md, 10px);
+    margin: 2px 8px;
+    padding: 10px 12px !important;
+    transition: background-color 0.15s ease;
+  }
+  :deep(.q-item__section--avatar) {
+    min-width: 36px;
+  }
+  :deep(.q-item:hover) {
+    background: rgba(0, 0, 0, 0.03);
+  }
+  :deep(.q-item.drawer-item-active) {
+    background: rgba(99, 102, 241, 0.08) !important;
+    color: var(--ai-primary) !important;
+    font-weight: 600;
+  }
+  :deep(.q-item.drawer-item-active .q-icon) {
+    color: var(--ai-primary) !important;
+  }
 }
 .main-layout-drawer-user-text {
   min-width: 0;

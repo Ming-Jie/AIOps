@@ -44,19 +44,3 @@ execution_mode: client
   "path": "test.spec.ts"
 }
 ```
-
-## 结合 E2E Recorder
-
-E2E Recorder 生成的 Playwright 测试可以用此工具运行：
-
-```json
-{
-  "framework": "jest",
-  "path": "/tmp/e2e-test/test.spec.ts",
-  "work_dir": "/tmp/e2e-test"
-}
-```
-
-或者直接在命令行：
-```bash
-cd /tmp/e2e-test && npx playwright test

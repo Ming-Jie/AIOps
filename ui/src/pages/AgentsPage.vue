@@ -13,7 +13,7 @@
       v-model:pagination="pagination"
       flat
       bordered
-      class="radius-sm"
+      class="q-table--soft radius-md"
       :rows="rows"
       :columns="columns"
       row-key="id"
@@ -43,15 +43,16 @@
       </template>
       <template #body-cell-actions="props">
         <q-td :props="props">
-          <q-btn dense flat color="primary" :label="t('chat')" @click="goChat(props.row)" />
-          <q-btn dense flat color="secondary" :label="t('edit')" @click="openDialog(props.row)" />
-          <q-btn dense flat color="negative" :label="t('delete')" @click="confirmDelete(props.row)" />
+          <q-btn v-if="props.row.can_chat" dense flat color="primary" :label="t('chat')" @click="goChat(props.row)" />
+          <q-btn v-else dense flat color="grey" disable label="仅查看" />
+          <q-btn v-if="props.row.can_edit" dense flat color="secondary" :label="t('edit')" @click="openDialog(props.row)" />
+          <q-btn v-if="props.row.can_edit" dense flat color="negative" :label="t('delete')" @click="confirmDelete(props.row)" />
         </q-td>
       </template>
     </q-table>
 
-    <q-dialog v-model="dialogOpen">
-      <q-card class="agent-edit-dialog-card">
+    <q-dialog v-model="dialogOpen" transition-show="scale" transition-hide="scale">
+      <q-card class="agent-edit-dialog-card card-soft card-soft--bordered">
         <q-card-section class="row items-center">
           <div class="text-h6">{{ isEdit ? t('editAgent') : t('createAgent') }}</div>
           <q-space />
@@ -83,6 +84,29 @@
               </div>
               <q-input v-model="form.description" :label="t('description')" outlined dense type="textarea" autogrow :rules="[v => !!v]" class="q-mt-md" />
               <q-checkbox v-model="form.is_active" :label="t('isActive')" class="q-mt-md" />
+              <q-select
+                v-model="selectedChatUserIds"
+                :options="availableUsers"
+                label="可对话用户"
+                outlined
+                dense
+                multiple
+                use-chips
+                use-input
+                input-debounce="300"
+                emit-value
+                map-options
+                option-value="id"
+                option-label="username"
+                :hint="'选择可与此智能体对话的用户（创建者始终可对话）'"
+                class="q-mt-md"
+              >
+                <template #no-option>
+                  <q-item>
+                    <q-item-section class="text-grey">无匹配用户</q-item-section>
+                  </q-item>
+                </template>
+              </q-select>
             </q-tab-panel>
 
             <!-- Runtime Config Tab -->
@@ -388,6 +412,35 @@
                   {{ t('imWecomNotifyOnlyHint') }}
                 </q-banner>
 
+                <q-banner
+                  v-if="runtimeProfile.im_enabled === 'qq'"
+                  class="bg-green-1 text-green-10 q-mb-md"
+                  rounded
+                  dense
+                >
+                  {{ t('imQQHint') }}
+                </q-banner>
+
+                <q-input
+                  v-if="runtimeProfile.im_enabled === 'qq'"
+                  v-model="runtimeProfile.im_config.qq_app_id"
+                  :label="t('imQQAppID')"
+                  outlined
+                  dense
+                  :hint="t('imQQAppIDHint')"
+                  class="q-mb-md"
+                />
+
+                <q-input
+                  v-if="runtimeProfile.im_enabled === 'qq'"
+                  v-model="runtimeProfile.im_config.qq_bot_token"
+                  :label="t('imQQBotToken')"
+                  outlined
+                  dense
+                  :hint="t('imQQBotTokenHint')"
+                  class="q-mb-md"
+                />
+
                 <q-input
                   v-if="runtimeProfile.im_enabled === 'lark'"
                   v-model="runtimeProfile.im_config.lark_open_domain"
@@ -558,7 +611,8 @@ const {
   selectedSkillIds,
   selectedMcpConfigIds,
   selectedKbIds,
-  onSystemPromptPaste
+  onSystemPromptPaste,
+  selectedChatUserIds
 } = agentsPage
 
 const executionModeOptions = computed(() => [
@@ -604,13 +658,14 @@ const modelConfigOptions = computed(() =>
 
 const imEnabledOptions = computed(() => [
   { label: t('imEnabledOptionsDisabled'), value: 'disabled' },
-  { label: t('imEnabledOptionsTelegram'), value: 'telegram' },
   { label: t('imEnabledOptionsLark'), value: 'lark' },
   { label: t('imEnabledOptionsDingtalk'), value: 'dingtalk' },
+  { label: t('imEnabledOptionsTelegram'), value: 'telegram' },
+  { label: t('imEnabledOptionsQQ'), value: 'qq' },
   { label: t('imEnabledOptionsWecom'), value: 'wecom' }
 ])
 
-/** 飞书 / 钉钉 / 企微：仅填应用 App ID + App Secret */
+/** 飞书 / 钉钉 / 企微 / QQ：显示 App ID + App Secret */
 const imShowsAppCredentials = computed(() =>
   runtimeProfile.im_enabled === 'lark' ||
   runtimeProfile.im_enabled === 'dingtalk' ||
@@ -683,7 +738,7 @@ function toggleAllSkills () {
 const skillRiskMap: Record<string, string> = {
   'builtin_skill.search': 'low',
   'builtin_skill.calculator': 'low',
-  'builtin_skill.code_interpreter': 'low',
+  'builtin_skill.js_interpreter': 'low',
   'builtin_skill.datetime': 'low',
   'builtin_skill.regex': 'low',
   'builtin_skill.json_parser': 'low',
@@ -752,6 +807,7 @@ const getSkillRiskLabel = (skill: Skill): string => {
 .agent-edit-dialog-card {
   width: min(92vw, 640px);
   max-width: 92vw;
+  border-radius: var(--radius-xl, 18px) !important;
 }
 .skill-card {
   border: 1px solid rgba(0, 0, 0, 0.12);

@@ -9,7 +9,7 @@
 
     <q-banner v-if="errorMsg" class="bg-negative text-white q-mb-md" dense>{{ errorMsg }}</q-banner>
 
-    <q-table flat bordered :rows="rows" :columns="columns" row-key="id" :loading="loading" :no-data-label="t('noData')">
+    <q-table flat bordered class="q-table--soft radius-md" :rows="rows" :columns="columns" row-key="id" :loading="loading" :no-data-label="t('noData')">
       <template #body-cell-channel_name="props">
         <q-td :props="props">
           {{ props.row.channel_name || '—' }}

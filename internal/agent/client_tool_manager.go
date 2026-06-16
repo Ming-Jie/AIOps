@@ -213,14 +213,13 @@ func GetToolExecutionMode(toolName string) string {
 	} else {
 		return schema.ExecutionModeServer
 	}
-	// builtin_browser is client-only (browser_client skill); tool Extra sets execution_mode=client.
 	switch skillKey {
 	case "builtin_skill.docker_operator", "builtin_skill.git_operator", "builtin_skill.file_parser",
 		"builtin_skill.system_monitor", "builtin_skill.cron_manager", "builtin_skill.network_tools",
 		"builtin_skill.cert_checker", "builtin_skill.nginx_diagnose", "builtin_skill.dns_lookup",
 		"builtin_skill.datetime", "builtin_skill.regex", "builtin_skill.json_parser",
 		"builtin_skill.csv_analyzer", "builtin_skill.log_analyzer", "builtin_skill.image_analyzer",
-		"builtin_skill.terraform_plan", "builtin_skill.redis_tool", "builtin_skill.browser_client",
+		"builtin_skill.terraform_plan", "builtin_skill.redis_tool",
 		"builtin_skill.cisco", "builtin_skill.cisco_ios":
 		return schema.ExecutionModeClient
 	default:

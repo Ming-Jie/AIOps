@@ -11,6 +11,8 @@ export type StreamProcessorsContext = {
   upsertPlanExecute?: (payload: Record<string, unknown>) => void
   /** Attach `error` / `observation` / `thought` / `action` with `step` to that plan row (ordered sub-lines). */
   mergePlanExecuteReActEvent?: (payload: Record<string, unknown>) => boolean
+  /** 推送工具返回的媒体（图片/附件）作为独立消息，不嵌套在 assistant 气泡内 */
+  onToolResultMedia?: (toolName: string, resultContent: string, attachments: unknown[]) => void
 }
 
 export function processReActEvent (payload: Record<string, unknown>, ctx: StreamProcessorsContext): void {
@@ -111,6 +113,8 @@ export function processReActEvent (payload: Record<string, unknown>, ctx: Stream
     error: '错误'
   }
 
+  const attachments = (payload.attachments as unknown[]) || undefined
+
   pushThoughtStep({
     type: stepType,
     data: {
@@ -119,6 +123,10 @@ export function processReActEvent (payload: Record<string, unknown>, ctx: Stream
       tool,
       name: tool,
       ...(input != null ? { input } : {}),
+      ...(attachments != null ? { attachments } : {}),
+      ...(typeof content === 'string' && content.startsWith('data:image/')
+        ? { inline_image: content.split('\n')[0] }
+        : {}),
       reactType,
       label: labels[reactType] || reactType
     },
@@ -215,9 +223,19 @@ export function processStreamEvent (payload: Record<string, unknown>, ctx: Strea
     if (resultContent !== '') {
       setLastServerToolResult?.(resultContent)
     }
+    const attachments = (payload.attachments as unknown[]) || undefined
+    const hasInlineImage = typeof resultContent === 'string' && resultContent.startsWith('data:image/')
+    if ((hasInlineImage || (attachments != null && attachments.length > 0)) && ctx.onToolResultMedia) {
+      ctx.onToolResultMedia(toolName, resultContent, attachments || [])
+    }
     pushThoughtStep({
       type: 'observation',
-      data: { name: toolName, content: resultContent },
+      data: {
+        name: toolName,
+        content: resultContent,
+        ...(attachments != null ? { attachments } : {}),
+        ...(hasInlineImage ? { inline_image: resultContent.split('\n')[0] } : {})
+      },
       meta: { modelName: (payload as Record<string, unknown>).model_name || '' },
       timestamp: (payload as Record<string, unknown>).timestamp as string
     })

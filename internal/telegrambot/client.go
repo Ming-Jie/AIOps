@@ -1,12 +1,16 @@
 package telegrambot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,7 +19,9 @@ import (
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/fisk086/aiops/internal/agent"
 	"github.com/fisk086/aiops/internal/imhistory"
+	"github.com/fisk086/aiops/internal/imoutbound"
 	"github.com/fisk086/aiops/internal/logger"
+	"github.com/fisk086/aiops/internal/skills"
 	"github.com/larksuite/oapi-sdk-go/v3/channel/safety"
 )
 
@@ -272,6 +278,9 @@ func (c *Client) stopEntryLocked(entry *BotEntry) {
 
 func (c *Client) pollLoop(ctx context.Context, token string) {
 	offset := int64(0)
+	const maxBackoff = 30 * time.Second
+	backoff := 1 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -284,10 +293,22 @@ func (c *Client) pollLoop(ctx context.Context, token string) {
 			if ctx.Err() != nil {
 				return
 			}
-			logger.Warn("telegrambot: getUpdates failed", "token_prefix", tokenPrefix(token), "err", err)
-			time.Sleep(3 * time.Second)
+			logger.Warn("telegrambot: getUpdates failed", "token_prefix", tokenPrefix(token), "err", err, "backoff", backoff)
+
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return
+			}
+
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 			continue
 		}
+
+		backoff = 1 * time.Second
 
 		for _, u := range updates {
 			if u.UpdateID >= offset {
@@ -426,6 +447,9 @@ func (c *Client) HandleUpdate(ctx context.Context, botToken string, payload []by
 	if rec := imhistory.GlobalRecorder(); rec != nil && senderID != "" {
 		sessionID, history = rec.PrepareConversation(ctx, "telegram", cfg.AgentID, senderID, 20)
 	}
+	if sessionID != "" {
+		ctx = imoutbound.WithScope(ctx, cfg.AgentID, sessionID)
+	}
 
 	timeout := cfg.InvokeTimeout
 	if timeout <= 0 {
@@ -440,10 +464,19 @@ func (c *Client) HandleUpdate(ctx context.Context, botToken string, payload []by
 		logger.Error("telegrambot: invoke agent failed", "err", err)
 	}
 
-	if chatID != "" {
-		if err := c.SendMessage(ctx, botToken, chatID, respText); err != nil {
+	scope := imoutbound.Scope{AgentID: cfg.AgentID, SessionID: sessionID}
+	out := imoutbound.DeliverIMReply(imoutbound.DeliverInput{
+		Channel: "telegram", Ctx: ctx, AgentCtx: ctx, Scope: scope, Store: imoutbound.GlobalStore(),
+		UserRequest: userInput, AgentText: respText,
+	})
+
+	if chatID != "" && strings.TrimSpace(out.Text) != "" {
+		if err := c.SendMessage(ctx, botToken, chatID, out.Text); err != nil {
 			logger.Warn("telegrambot: send reply failed", "err", err)
 		}
+	}
+	if chatID != "" && len(out.FileNames) > 0 {
+		c.sendOutboundFiles(ctx, botToken, chatID, scope, out.FileNames)
 	}
 
 	if rec := imhistory.GlobalRecorder(); rec != nil && sessionID != "" {
@@ -454,8 +487,74 @@ func (c *Client) HandleUpdate(ctx context.Context, botToken string, payload []by
 }
 
 func (c *Client) invokeAgent(ctx context.Context, runtime *agent.Runtime, agentID int64, userInput, auditUserID, sessionID string, history []*einoschema.Message) (string, error) {
-	resp, err := runtime.ChatWithMemoryContext(ctx, agentID, userInput, "", "", "", sessionID, auditUserID, history)
+	resp, err := runtime.ChatWithMemoryContext(ctx, agentID, userInput, "", "", imoutbound.IMMemoryContextHint(), sessionID, auditUserID, history)
 	return resp, err
+}
+
+func (c *Client) sendOutboundFiles(ctx context.Context, token, chatID string, scope imoutbound.Scope, names []string) {
+	store := imoutbound.GlobalStore()
+	const maxFilesPerReply = 5
+	if len(names) > maxFilesPerReply {
+		names = names[:maxFilesPerReply]
+	}
+	for _, name := range names {
+		abs, err := skills.ResolveIMAttachmentPath(store, scope, name)
+		if err != nil {
+			logger.Warn("telegrambot: outbound file resolve failed", "file", name, "err", err)
+			continue
+		}
+		if err := c.sendTelegramFile(ctx, token, chatID, abs); err != nil {
+			logger.Warn("telegrambot: send file failed", "file", name, "err", err)
+		} else {
+			logger.Info("telegrambot: file sent", "file", name)
+		}
+	}
+}
+
+func (c *Client) sendTelegramFile(ctx context.Context, token, chatID, absPath string) error {
+	ext := filepath.Ext(absPath)
+	isImage := ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp"
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, map[bool]string{true: "sendPhoto", false: "sendDocument"}[isImage])
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("chat_id", chatID); err != nil {
+		return err
+	}
+	part, err := writer.CreateFormFile(map[bool]string{true: "photo", false: "document"}[isImage], filepath.Base(absPath))
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(absPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(part, f); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram send file failed: %s", b)
+	}
+	return nil
 }
 
 func (c *Client) SendMessage(ctx context.Context, token, chatID, text string) error {

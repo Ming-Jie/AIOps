@@ -51,6 +51,16 @@ func (g *GORMDB) AutoMigrate() error {
 		&model.Schedule{},
 		&model.ScheduleExecution{},
 		&model.TokenUsage{},
+		&model.GuardrailRule{},
+		&model.GuardrailAgentBinding{},
+		&model.GuardrailLog{},
+		&model.Team{},
+		&model.TeamMember{},
+		&model.TeamConversation{},
+		&model.TeamMessage{},
+		&model.EvalCase{},
+		&model.EvalRun{},
+		&model.EvalResult{},
 	)
 }
 
