@@ -24,7 +24,7 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata nodejs npm python3 py3-pip docker-cli && \
     pip3 install uv --break-system-packages && \
     npm install -g agent-browser && \
-    npx agent-browser install --with-deps
+    npx agent-browser install
 WORKDIR /app
 RUN mkdir -p /app/data/uploads
 COPY --from=gobuild /out/aiops .
