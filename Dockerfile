@@ -21,6 +21,12 @@ COPY --from=ui /src/ui/dist/spa/ ./internal/webui/dist/
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/aiops ./cmd/server
 
 FROM alpine:3.21
+# 安装Chromium
+RUN apk add --no-cache chromium
+
+# 配置agent-browser使用Chromium
+RUN npm install -g agent-browser && \
+    npx agent-browser --executable-path /usr/bin/chromium
 RUN apk add --no-cache ca-certificates tzdata nodejs npm python3 py3-pip docker-cli && \
     pip3 install uv --break-system-packages && \
     npm install -g agent-browser && \
